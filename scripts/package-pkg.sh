@@ -17,7 +17,7 @@ def copy_runtime(source,target):
  shutil.copyfile(source,target);os.chmod(target,source.stat().st_mode & 0o777)
 for name in ['Info.plist','MacOS/QWhaleMaiden','Helpers/starbud-event']:
  target=dst/'Contents'/name;target.parent.mkdir(parents=True,exist_ok=True);copy_runtime(src/'Contents'/name,target)
-for name in ['index.html','settings.html','app.css','pet.css','pet.js','settings.js','dsh-renderer.js','chatter.json','AppIcon.icns']:
+for name in ['index.html','settings.html','app.css','pet.css','pet.js','settings.js','dsh-renderer.js','chatter.json','AppIcon.icns','settings-avatar.png']:
  copy_runtime(src/'Contents/Resources'/name,dst/'Contents/Resources'/name)
 (dst/'Contents/Resources/bridges/dsh').mkdir(parents=True)
 copy_runtime(src/'Contents/Resources/bridges/dsh/index.mjs',dst/'Contents/Resources/bridges/dsh/index.mjs')

@@ -11,6 +11,7 @@ mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources" "$STAGE/Contents/He
 COMMON=(-swift-version 5 -O -target arm64-apple-macosx13.0 -module-cache-path "$PWD/build/cache")
 xcrun swiftc "${COMMON[@]}" Sources/Core.swift Sources/Agents.swift Sources/IPC.swift Sources/BridgeSetup.swift Sources/Services.swift Sources/Assets.swift Sources/PassThroughExit.swift Sources/Motion.swift Sources/RuntimeLog.swift Sources/App.swift -framework AppKit -framework WebKit -framework EventKit -framework ServiceManagement -framework ImageIO -framework Carbon -lsqlite3 -o "$STAGE/Contents/MacOS/QWhaleMaiden"
 xcrun swiftc "${COMMON[@]}" Sources/Core.swift Sources/IPC.swift Sources/BridgeSetup.swift Sources/EventCLI.swift -lsqlite3 -o "$STAGE/Contents/Helpers/starbud-event"
+cp Resources/settings-avatar.png "$STAGE/Contents/Resources/"
 cp Info.plist "$STAGE/Contents/Info.plist"
 cp Resources/*.html Resources/*.css Resources/*.js Resources/*.json "$STAGE/Contents/Resources/"
 cp -R Resources/dsh "$STAGE/Contents/Resources/"

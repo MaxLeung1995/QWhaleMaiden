@@ -8,6 +8,8 @@ Swift/AppKit windows with local WKWebView resources; SQLite snapshot and bounded
 
 ## Current behavior
 
+Settings sidebar uses a transparent generated head portrait (`Resources/settings-avatar.png`), with Q鲸娘 above Q-WhaleMaiden. Fixed avatar columns and responsive type keep both labels inside the sidebar. Application/bundle name stays QWhaleMaiden.
+
 106 built-in DSH-pet animations; body reference height 132 points. Toolbar 132×28, More panel 244×248. Agent background opacity 85%, local/wellness bubble 75%. Default focus 45 minutes. Motion menu suppression uses native and web guards plus 700ms post-motion cooldown. Bounds derive from current NSScreen visibleFrame and body geometry.
 
 Source IDs: codex, workbuddy, trae, lingxi, dsh, qwenwork. QwenWorkCN is distinct from Qianwen chat. Notifications open the app by Bundle ID; deep links are not enabled. DSH and QwenWork integration has isolated-chain coverage, not complete real-host acceptance.
