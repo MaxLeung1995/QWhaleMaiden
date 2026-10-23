@@ -35,7 +35,7 @@ p=subprocess.Popen([str(APP/'Contents/MacOS/QWhaleMaiden')],env=env,stdout=(REPO
 try:
  wait(lambda:call('status')['ok']);wait(lambda:(REPORT/'settings.png').exists())
  call('verify','--toggle','walk');call('verify','--toggle','whispers')
- start=call('status');check(start['version']=='0.1.2','native motion build starts with diagnostic log path')
+ start=call('status');check(start['version']=='0.1.2-beta','native motion build starts with diagnostic log path')
  for action in ['throwVertical','throwDiagonal','throwLeft']:
   began=capture(action);state=call('status')
   check(state['motion']['phase']=='flight',action+' continues past its initial upward phase')

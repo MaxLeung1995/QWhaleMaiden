@@ -1,6 +1,6 @@
 # QWhaleMaiden engineering handoff
 
-Version 0.1.2, macOS arm64, minimum deployment target 13.0. This public handoff intentionally excludes machine-specific history and user state.
+Version 0.1.2-beta, macOS arm64, minimum deployment target 13.0. This public handoff intentionally excludes machine-specific history and user state.
 
 ## Architecture
 

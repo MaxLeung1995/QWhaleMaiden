@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             guard lockFD >= 0, flock(lockFD,LOCK_EX|LOCK_NB) == 0 else {
                 _ = try? LocalChannel.request(path:LocalChannel.path(dataRoot:dataRoot),object:["command":"show"]); NSApp.terminate(nil); return
             }
-            runtimeLog.record("app_start",["version":"0.1.2","pid":ProcessInfo.processInfo.processIdentifier])
+            runtimeLog.record("app_start",["version":"0.1.2-beta","pid":ProcessInfo.processInfo.processIdentifier])
             chatter = try ChatterDeck(url:Bundle.main.resourceURL!.appendingPathComponent("chatter.json"))
             if ProcessInfo.processInfo.environment["STARBUD_DATA_DIR"] == nil {
                 let legacyName="\u{661F}\u{82BD}\u{684C}\u{5BA0}"
@@ -429,7 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let agents: [[String:Any]] = AgentID.allCases.map { a in
             ["id":a.rawValue,"name":a.name,"installed":LaunchRouter.appURL(a) != nil,"enabled":!core.state.settings.disabledAgents.contains(a),"status":adapters.report[a.rawValue] ?? ([.dsh,.qwenwork].contains(a) ? BridgeSetup.status(agent:a,home:adapters.home) : "需安装 hook；模式覆盖待真实验证"),"navigation":"打开应用 · 会话定位未启用"]
         }
-        var result:[String:Any] = ["menusOnRight":menusOnRight,"through":through,"escape":passThroughExit.status,"chatter":chatter.lines,"settings":encoded(core.state.settings),"activity":core.activity,"bubble":encoded(displayed),"count":items.count,"index":(items.firstIndex { $0.id == displayed?.id } ?? 0)+1,"reminders":encoded(core.state.reminders),"weather":encoded(core.state.weather),"weatherError":weather.error ?? "","calendar":encoded(calendar.items),"calendars":calendar.calendars,"calendarStatus":calendar.status,"packs":encoded(packList),"pack":encoded(currentPack),"agents":agents,"cities":encoded(cities),"info":info,"loginEnabled":SMAppService.mainApp.status == .enabled,"version":"0.1.2","geometry":geometrySnapshot(),"overlayViewport":overlayViewport()]
+        var result:[String:Any] = ["menusOnRight":menusOnRight,"through":through,"escape":passThroughExit.status,"chatter":chatter.lines,"settings":encoded(core.state.settings),"activity":core.activity,"bubble":encoded(displayed),"count":items.count,"index":(items.firstIndex { $0.id == displayed?.id } ?? 0)+1,"reminders":encoded(core.state.reminders),"weather":encoded(core.state.weather),"weatherError":weather.error ?? "","calendar":encoded(calendar.items),"calendars":calendar.calendars,"calendarStatus":calendar.status,"packs":encoded(packList),"pack":encoded(currentPack),"agents":agents,"cities":encoded(cities),"info":info,"loginEnabled":SMAppService.mainApp.status == .enabled,"version":"0.1.2-beta","geometry":geometrySnapshot(),"overlayViewport":overlayViewport()]
         if smokeDirectory != nil && smokeWidgetFixture {
             var settings=result["settings"] as! [String:Any];settings["calendarEnabled"]=true;settings["city"]=["name":"上海","latitude":31.23,"longitude":121.47,"timezone":"Asia/Shanghai"];result["settings"]=settings
             let start=Calendar.current.startOfDay(for:Date()).timeIntervalSince1970
@@ -480,7 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 guard let kind=object["kind"] as? String,WellnessReminder(kind:kind) != nil else { throw QWhaleMaidenError.message("未知提醒类型") }
                 previewWellnessReminder(kind);return ["ok":true]
             case "quit": DispatchQueue.main.asyncAfter(deadline:.now()+0.2) { NSApp.terminate(nil) };return ["ok":true]
-            case "status": return ["bodyScreenRect":bodyScreenRect(),"motion":motionFields(),"geometry":geometrySnapshot(),"overlayViewport":overlayViewport(),"logDirectory":runtimeLog.directory.path,"ok":true,"version":"0.1.2","tasks":core.state.tasks.count,"bubbles":core.bubbles().count,"hitRegions":hitRegions.count,"statusIconVisible":statusItem.isVisible,"menuClickMonitoring":menuGlobalMonitor != nil && menuLocalMonitor != nil,"through":through,"escape":passThroughExit.status,"adapters":adapters.report,"dataRoot":dataRoot.path]
+            case "status": return ["bodyScreenRect":bodyScreenRect(),"motion":motionFields(),"geometry":geometrySnapshot(),"overlayViewport":overlayViewport(),"logDirectory":runtimeLog.directory.path,"ok":true,"version":"0.1.2-beta","tasks":core.state.tasks.count,"bubbles":core.bubbles().count,"hitRegions":hitRegions.count,"statusIconVisible":statusItem.isVisible,"menuClickMonitoring":menuGlobalMonitor != nil && menuLocalMonitor != nil,"through":through,"escape":passThroughExit.status,"adapters":adapters.report,"dataRoot":dataRoot.path]
             case "verifyView":
                 let captureID=(object["captureID"] as? String).flatMap(UUID.init(uuidString:))?.uuidString ?? UUID().uuidString
                 guard smokeDirectory != nil else { throw QWhaleMaidenError.message("仅隔离验证实例可用") }
@@ -655,7 +655,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         DispatchQueue.main.asyncAfter(deadline:.now()+4) { [weak self] in
             guard let self=self else { return }
             self.petView.evaluateJavaScript("JSON.stringify(window.petDiagnostics())") { result,error in
-                let report:[String:Any] = ["view":result ?? "missing","error":error?.localizedDescription ?? "","version":"0.1.2"]
+                let report:[String:Any] = ["view":result ?? "missing","error":error?.localizedDescription ?? "","version":"0.1.2-beta"]
                 if let data=try? JSONSerialization.data(withJSONObject:report,options:.prettyPrinted) { try? data.write(to:root.appendingPathComponent("webview.json")) }
             }
             self.petView.takeSnapshot(with:nil) { image,error in
