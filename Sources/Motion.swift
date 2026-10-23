@@ -96,7 +96,6 @@ struct PetMotion {
         if bounds.maxX-position.x<=margin { return -1 }
         return randomDirection<0 ? -1 : 1
     }
-    mutating func walk(position: NSPoint, direction: Double) { stop();self.position=position;velocity=NSPoint(x:direction*45,y:0);walkRemaining=3;phase = .walk }
     mutating func walk(position: NSPoint,target: NSPoint,speed: Double) {
         stop();self.position=position
         let gap=hypot(target.x-position.x,target.y-position.y)
@@ -122,11 +121,6 @@ struct PetMotion {
                     let end=bounds.clamp(target),gap=hypot(end.x-position.x,end.y-position.y),speed=hypot(velocity.x,velocity.y)
                     if gap<=speed*dt || speed<=0 || age>=15 { position=end;stop();collisions.insert("walk_arrived");break }
                     velocity=NSPoint(x:(end.x-position.x)/gap*speed,y:(end.y-position.y)/gap*speed);walkRemaining=gap/speed
-                } else {
-                walkRemaining-=dt;if walkRemaining<=0 { stop();break }
-                let margin=Self.turnDistance(bounds:bounds)
-                if velocity.x<0 && position.x-bounds.minX<=margin { velocity.x=abs(velocity.x);collisions.insert("turn_right") }
-                else if velocity.x>0 && bounds.maxX-position.x<=margin { velocity.x = -abs(velocity.x);collisions.insert("turn_left") }
                 }
             }
             else { velocity.y-=1600*dt;velocity.x*=exp(-0.25*dt) }

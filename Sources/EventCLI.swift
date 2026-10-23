@@ -28,9 +28,13 @@ import Darwin
         switch command {
         case "status": object = ["command":"status"]
         case "show": object = ["command":"show"]
+        #if DEBUG
         case "preview-reminder": object = ["command":"previewReminder","kind":value("--kind") ?? "focus"]
+        #endif
         case "quit": object = ["command":"quit"]
+        #if DEBUG
         case "verify": object = ["command":"verifyView","capture":true,"captureID":UUID().uuidString,"fast":args.contains("--fast")];if let tab=value("--tab") { object["tab"]=tab };if let toggle=value("--toggle") { object["toggle"]=toggle };if let action=value("--action") { object["action"]=action };if let scenario=value("--scenario") { object["scenario"]=scenario };if let focus=value("--focus") { object["focus"]=focus };if let ui=value("--pet-ui") { object["petUI"]=ui };if let clip=value("--walk-clip") { object["walkClip"]=clip };if let kind=value("--fire-reminder") { object["fireReminder"]=kind }
+        #endif
         case "hook", "event":
             var data = Data()
             while true {

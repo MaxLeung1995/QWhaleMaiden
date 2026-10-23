@@ -2,7 +2,8 @@
 set -euo pipefail
 export COPYFILE_DISABLE=1
 BASE="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE_APP="${1:-$BASE/build/QWhaleMaiden.app}"
+if [ "$#" -eq 0 ]; then QW_BUILD_MODE=release "$BASE/scripts/build.sh"; fi
+SOURCE_APP="${1:-$BASE/build/release/QWhaleMaiden.app}"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$SOURCE_APP/Contents/Info.plist")"
 mkdir -p "$BASE/dist" "$BASE/build/verification"
 OUTPUT="$BASE/dist/QWhaleMaiden-$VERSION-macOS-arm64.pkg"
@@ -25,13 +26,17 @@ copy_runtime(src/'Contents/Resources/bridges/dsh/index.mjs',dst/'Contents/Resour
 for name in ['focus.wav','rest.wav','water.wav']:
  copy_runtime(src/'Contents/Resources/sounds'/name,dst/'Contents/Resources/sounds'/name)
 dsh=src/'Contents/Resources/dsh';target=dst/'Contents/Resources/dsh';target.mkdir()
-for name in ['LICENSE.txt','provenance.json','catalog.js','poster.png','avatar.png']:
+for name in ['LICENSE.txt','provenance.json','catalog.js','poster.png']:
  copy_runtime(dsh/name,target/name)
 (target/'mov').mkdir()
 for f in dsh.glob('mov/*.mov'):copy_runtime(f,target/'mov'/f.name)
 assert len(list((target/'mov').glob('*.mov')))==106
-page=dst/'Contents/Resources/settings.html'
-page.write_text(page.read_text().replace('项目 Resources/example-pack 中有可用示例。',''))
+for file in ['MacOS/QWhaleMaiden','Helpers/starbud-event']:
+ data=(dst/'Contents'/file).read_bytes()
+ assert b'verifyView' not in data and b'STARBUD_SMOKE_DIR' not in data,'Use a release build, not a development binary'
+for file in ['pet.js','settings.js','dsh-renderer.js']:
+ data=(dst/'Contents/Resources'/file).read_text()
+ assert not any(name in data for name in ['uiDiagnostics','settingsDiagnostics','petDiagnostics','diagnostics(){'])
 PY
 xattr -cr "$STAGE/root/QWhaleMaiden.app"
 codesign --force --sign - "$STAGE/root/QWhaleMaiden.app"
@@ -64,7 +69,7 @@ package_infos=list((stage/'expanded').rglob('PackageInfo'));assert len(package_i
 info=ET.parse(package_infos[0]).getroot();assert info.attrib['install-location']=='/Applications'
 assert not (app.parent/'Library').exists()
 sha=hashlib.sha256(pkg.read_bytes()).hexdigest()
-result={'package':str(pkg),'version':info.attrib['version'],'installLocation':'/Applications/QWhaleMaiden.app','payloadFileCount':len(actual),'animationCount':106,'onlyApplicationPayload':True,'testDataIncluded':False,'logsIncluded':False,'examplePackIncluded':False,'installerScriptsIncluded':False,'relocatable':False,'installerSigned':False,'notarized':False,'appSignature':'ad-hoc','expandedPayloadMatchesCleanStage':True,'bytes':pkg.stat().st_size,'sha256':sha,'files':actual}
+result={'package':str(pkg),'version':info.attrib['version'],'installLocation':'/Applications/QWhaleMaiden.app','payloadFileCount':len(actual),'animationCount':106,'onlyApplicationPayload':True,'testDataIncluded':False,'developerCodeIncluded':False,'logsIncluded':False,'examplePackIncluded':False,'installerScriptsIncluded':False,'relocatable':False,'installerSigned':False,'notarized':False,'appSignature':'ad-hoc','expandedPayloadMatchesCleanStage':True,'bytes':pkg.stat().st_size,'sha256':sha,'files':actual}
 report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
 pkg.with_suffix('.pkg.sha256').write_text(sha+'  '+pkg.name+'\n')
 print(json.dumps({k:v for k,v in result.items() if k!='files'},ensure_ascii=False,indent=2))

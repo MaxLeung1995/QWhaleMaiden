@@ -35,16 +35,6 @@ import Foundation
     check(PetMotion.walkDirection(position:NSPoint(x:bounds.maxX,y:0),bounds:bounds,randomDirection:1)==(-1),"right edge always chooses left")
     let middle=NSPoint(x:(bounds.minX+bounds.maxX)/2,y:0)
     for direction in [-1.0,1.0] { check(PetMotion.walkDirection(position:middle,bounds:bounds,randomDirection:direction)==direction,"middle preserves random direction \(direction)") }
-    m.walk(position:NSPoint(x:bounds.minX+141,y:0),direction:-1)
-    let leftTurn=m.advance(seconds:0.05,bounds:bounds)
-    check(m.velocity.x>0 && leftTurn.contains("turn_right") && m.position.x>bounds.minX+139,"running near left edge turns before impact")
-    m.walk(position:NSPoint(x:bounds.maxX-141,y:0),direction:1)
-    let rightTurn=m.advance(seconds:0.05,bounds:bounds)
-    check(m.velocity.x<0 && rightTurn.contains("turn_left") && m.position.x<bounds.maxX-139,"running near right edge turns before impact")
-    let narrow=MotionBounds(minX:0,maxX:180,minY:0,maxY:200)
-    m.walk(position:NSPoint(x:90,y:0),direction:-1);var turns=0
-    for _ in 0..<170 { turns+=m.advance(seconds:1.0/60,bounds:narrow).filter { $0.hasPrefix("turn_") }.count }
-    check(turns<=3,"narrow desktop does not oscillate every frame")
     for screen in [NSRect(x:0,y:25,width:1440,height:850),NSRect(x:-1920,y:-300,width:1920,height:1080),NSRect(x:1440,y:900,width:2560,height:1440)] {
         let body=NSRect(x:200,y:270,width:111.158,height:131.984),height=721.984
         let b=MotionBounds.forScreen(screen,body:body,windowHeight:height)

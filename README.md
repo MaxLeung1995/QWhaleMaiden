@@ -29,7 +29,7 @@ QWhaleMaiden 是基于 **DSH-pet 开源插件**与 **vlln/whale-girl 开源项�
 open build/QWhaleMaiden.app
 ```
 
-生成安装包：
+生成安装包（自动使用独立的正式构建，排除开发验证与截图入口）：
 
 ```sh
 ./scripts/package-pkg.sh

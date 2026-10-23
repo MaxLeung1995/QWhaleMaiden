@@ -62,7 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     var lastHealthLog=ProcessInfo.processInfo.systemUptime
     var recentErrors=Set<String>()
     lazy var runtimeLog=RuntimeLog(directory:dataRoot.appendingPathComponent("logs"))
+    #if DEBUG
     var smokeWidgetFixture=false
+    #endif
     var lockFD: Int32 = -1
     var lastTick = ProcessInfo.processInfo.systemUptime
     var nextWalk: Double = 0
@@ -78,7 +80,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     var info = ""
     var chatter: ChatterDeck!
     let dataRoot = URL(fileURLWithPath: ProcessInfo.processInfo.environment["STARBUD_DATA_DIR"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/QWhaleMaiden/v1").path)
+    #if DEBUG
     var smokeDirectory: URL? { ProcessInfo.processInfo.environment["STARBUD_SMOKE_DIR"].map { URL(fileURLWithPath:$0) } }
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -121,7 +125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             timer = Timer.scheduledTimer(withTimeInterval:1,repeats:true) { [weak self] _ in self?.tick() }
             weather.refresh(core:core) { [weak self] in self?.publish() }
             publish()
+            #if DEBUG
             if smokeDirectory != nil { scheduleSmoke() }
+            #endif
         } catch {
             let alert = NSAlert(); alert.messageText = "QWhaleMaiden启动失败"; alert.informativeText = error.localizedDescription; alert.runModal(); NSApp.terminate(nil)
         }
@@ -370,11 +376,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard !menuRegions.isEmpty else { stopMenuMonitors();return }
         let mask:NSEvent.EventTypeMask=[.leftMouseDown,.rightMouseDown,.otherMouseDown]
         if menuGlobalMonitor == nil { menuGlobalMonitor=NSEvent.addGlobalMonitorForEvents(matching:mask) { [weak self] event in
+            #if DEBUG
             if self?.smokeDirectory != nil && ProcessInfo.processInfo.environment["STARBUD_TEST_ISOLATE_MOUSE"] == "1" { return }
+            #endif
             self?.dismissMenuIfOutside(NSEvent.mouseLocation,rightClick:event.type == .rightMouseDown)
         } }
         if menuLocalMonitor == nil { menuLocalMonitor=NSEvent.addLocalMonitorForEvents(matching:mask) { [weak self] event in
+            #if DEBUG
             if self?.smokeDirectory != nil && ProcessInfo.processInfo.environment["STARBUD_TEST_ISOLATE_MOUSE"] == "1" { return event }
+            #endif
             self?.dismissMenuIfOutside(NSEvent.mouseLocation,rightClick:event.type == .rightMouseDown);return event
         } }
     }
@@ -477,6 +487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             if reminders["focusMode"] as? String == "running" { reminders["focusMode"]="paused" }
             result["reminders"]=reminders
         }
+        #if DEBUG
         if smokeDirectory != nil && smokeWidgetFixture {
             var settings=result["settings"] as! [String:Any];settings["calendarEnabled"]=true;settings["city"]=["name":"上海","latitude":31.23,"longitude":121.47,"timezone":"Asia/Shanghai"];result["settings"]=settings
             let start=Calendar.current.startOfDay(for:Date()).timeIntervalSince1970
@@ -484,6 +495,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             result["calendar"]=[["id":"today","title":"今日测试日程","start":start+36000,"end":start+39600,"allDay":false],["id":"tomorrow","title":"明日测试日程","start":start+129600,"end":start+133200,"allDay":false]]
             result["calendarStatus"]="只读 · 1 个日历"
         }
+        #endif
         return result
     }
     func publish() {
@@ -523,11 +535,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             switch object["command"] as? String {
             case "ping": return ["ok":true]
             case "show": showPet(); return ["ok":true]
+            #if DEBUG
             case "previewReminder":
                 guard let kind=object["kind"] as? String,WellnessReminder(kind:kind) != nil else { throw QWhaleMaidenError.message("未知提醒类型") }
                 previewWellnessReminder(kind);return ["ok":true]
+            #endif
             case "quit": DispatchQueue.main.asyncAfter(deadline:.now()+0.2) { NSApp.terminate(nil) };return ["ok":true]
             case "status": return ["bodyScreenRect":bodyScreenRect(),"motion":motionFields(),"geometry":geometrySnapshot(),"overlayViewport":overlayViewport(),"logDirectory":runtimeLog.directory.path,"ok":true,"version":"0.1.2-beta","tasks":core.state.tasks.count,"bubbles":core.bubbles().count,"hitRegions":hitRegions.count,"statusIconVisible":statusItem.isVisible,"menuClickMonitoring":menuGlobalMonitor != nil && menuLocalMonitor != nil,"through":through,"escape":passThroughExit.status,"adapters":adapters.report,"dataRoot":dataRoot.path]
+            #if DEBUG
             case "verifyView":
                 let captureID=(object["captureID"] as? String).flatMap(UUID.init(uuidString:))?.uuidString ?? UUID().uuidString
                 guard smokeDirectory != nil else { throw QWhaleMaidenError.message("仅隔离验证实例可用") }
@@ -567,10 +582,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                         stopNativeMotion("walk_test")
                         if let screen=motionScreen() { let b=motionBounds(screen);let x=["walkLeftEdge","runClipLeftEdge"].contains(ui) ? b.minX+20 : ["walkRightEdge","runClipRightEdge"].contains(ui) ? b.maxX-20 : (b.minX+b.maxX)/2;window.setFrameOrigin(NSPoint(x:x,y:b.minY));ensureVisible();if ui.hasPrefix("runClip") { runPet("command",["name":"builtinAction","action":"原地左转奔跑"]) } else { startWalk() } }
                     }
-                    else if ui == "walkTurnLeft" || ui == "walkTurnRight" {
-                        stopNativeMotion("walk_turn_test")
-                        if let screen=motionScreen() { let b=motionBounds(screen),direction:Double=ui == "walkTurnLeft" ? -1 : 1;window.setFrameOrigin(NSPoint(x:direction<0 ? b.minX+180 : b.maxX-180,y:b.minY));ensureVisible();runPet("command",["name":"nativeMotionStarted"]);motion.walk(position:window.frame.origin,direction:direction);inputBusy=true;resetMotionTelemetry();runPet("command",["name":"nativeWalkDirection","direction":direction,"remaining":motion.walkRemaining]) }
-                    }
                     else if ui == "motionStop" { stopNativeMotion("test_stop") }
                     else if ui == "widgetFixture" { smokeWidgetFixture=true;publish() }
                     else if ui == "clearWidgetFixture" { smokeWidgetFixture=false;publish() }
@@ -584,6 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 }
                 if object["capture"] as? Bool == true { DispatchQueue.main.asyncAfter(deadline:.now()+(object["fast"] as? Bool == true ? 0.04 : 0.75)) { self.captureSmoke(captureID:captureID) } }
                 return ["ok":true,"captureID":captureID]
+            #endif
             case "hook":
                 guard let name = object["agent"] as? String, let agent = AgentID(rawValue:name), let raw = object["payload"] as? [String:Any] else { throw QWhaleMaidenError.message("无效 hook") }
                 if var event = try AgentMapping.hook(agent:agent,raw:raw) {
@@ -712,6 +724,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard let url=action.request.url else { decisionHandler(.cancel);return }
         decisionHandler(url.isFileURL && url.standardizedFileURL.path.hasPrefix(Bundle.main.resourceURL!.path+"/") ? .allow : .cancel)
     }
+    #if DEBUG
     func scheduleSmoke() {
         guard let root=smokeDirectory else { return }; try? FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
         DispatchQueue.main.asyncAfter(deadline:.now()+4) { [weak self] in
@@ -748,4 +761,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             if let text=result as? String,let data=text.data(using:.utf8),var object=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] { object["captureID"]=captureID;if let encoded=try? JSONSerialization.data(withJSONObject:object) { try? encoded.write(to:root.appendingPathComponent("current-view.json"),options:.atomic) } }
         }
     }
+    #endif
 }
