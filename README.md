@@ -4,6 +4,38 @@ QWhaleMaiden 是基于 **DSH-pet 开源插件**与 **vlln/whale-girl 开源项�
 
 **适用于 Apple 芯片 Mac（arm64），最低编译目标 macOS 13。Intel Mac 不在当前支持范围。** 当前版本：0.1.2-beta。
 
+## 下载与安装
+
+前往 [Release](https://github.com/MaxLeung1995/QWhaleMaiden/releases/tag/v0.1.2-beta) 下载 macOS arm64 PKG，安装后打开 QWhaleMaiden。当前应用采用 ad-hoc 签名，安装包尚未经过 Developer ID 签名与 Apple 公证，macOS 可能提示安全拦截。
+
+## 界面预览
+
+以下为隔离环境中的实际应用截图，不含个人 Agent 会话或日历数据。菜单截图仅裁去透明留白并添加浅色背景。
+
+### 桌宠与互动
+
+喂食、玩耍、散步、打个盹、说句话与贴边勿扰，集中在紧凑的互动面板。
+
+<img src="docs/images/interaction.png" alt="鲸娘桌宠与六项互动菜单" width="620">
+
+### 快捷管理
+
+陪伴开关与换个形象、鼠标穿透、全部设置、退出桌宠。
+
+<img src="docs/images/management.png" alt="桌宠管理菜单" width="620">
+
+### 专注与提醒
+
+45 分钟番茄钟、休息与喝水提醒，配合柔和提示音、动作和气泡。
+
+![专注与休息设置](docs/images/focus-reminders.png)
+
+### 陪伴与勿扰
+
+散步、碎碎念、减少动态效果及贴边勿扰可分别控制。
+
+![陪伴与互动设置](docs/images/companion-settings.png)
+
 ## 来源与致谢
 
 - [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)：蓝鲸娘动画素材、动作分类及宿主事件处理参考；本项目保留 106 段动画并转换为 macOS 透明 HEVC MOV。
@@ -16,6 +48,8 @@ QWhaleMaiden 是基于 **DSH-pet 开源插件**与 **vlln/whale-girl 开源项�
 - 拖动、甩抛、弹跳、左右移动；按当前显示器可用区域自动计算边界。
 - 随机动画、离线碎碎念、互动、睡眠与素材包。
 - 每 120–300 秒在屏幕内沿二维路线走动，播完当前原地动画再出发；1.5 秒内轻点三次会跑开，可随时拖住打断。
+- 贴边勿扰：从当前位置垂直降到屏幕底边，循环蹲姿；拖出或三连击恢复。期间暂停散步、碎碎念、Agent 提醒及专注／休息／喝水计时与提醒，退出后恢复原设置。
+- 紧凑互动与管理菜单，全部设置按陪伴、Agent、专注、天气与日历、形象分组。
 - Agent 通知：Codex、WorkBuddy、Trae CN、WPS灵犀、DSH、千问办公QwenWorkCN（不是千问聊天客户端）。
 - 番茄钟（默认 45 分钟）、休息和喝水提醒，提供提示音、动画与气泡。
 - 手选城市天气、可选的 macOS 本地日历只读展示。
@@ -72,6 +106,7 @@ DSH/千问办公已通过隔离插件与原生事件链路测试；真实宿主�
 ./scripts/test-motion.sh
 python3 scripts/test-fullscreen-walk.py
 python3 scripts/test-edge-settings.py
+python3 scripts/test-edge-descent.py
 ./scripts/test-assets.sh
 python3 scripts/test-phase2.py
 python3 scripts/test-motion-runtime.py
