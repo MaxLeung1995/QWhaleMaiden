@@ -1,8 +1,8 @@
 # QWhaleMaiden
 
-QWhaleMaiden 是基于 **DSH-pet 开源插件**与 **vlln/whale-girl 开源项目**二次开发的 macOS 桌面宠物。采用 Swift/AppKit + WKWebView，默认使用蓝鲸娘形象，提供本机 Agent 任务提醒和轻量专注工具。
+QWhaleMaiden 是基于 **[DSH-pet](https://github.com/PC2005-cloud/dsh-pet) 开源插件**与 **[vlln/whale-girl](https://github.com/vlln/whale-girl) 开源项目**二次开发的 macOS 桌面宠物。采用 Swift/AppKit + WKWebView，默认使用蓝鲸娘形象，提供本机 Agent 任务提醒和轻量专注工具。
 
-**适用于 Apple 芯片 Mac（arm64），最低编译目标 macOS 13。Intel Mac 不在当前支持范围。** 当前版本：0.1.2-beta。
+**适用于 Apple 芯片 Mac（arm64），最低编译目标 macOS 13。Intel Mac 不在当前支持范围。**
 
 ## 下载与安装
 
