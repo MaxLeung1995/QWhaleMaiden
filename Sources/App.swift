@@ -44,6 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     var through = false
     var menusOnRight=false
     var edgeQuiet = false
+    var edgeToken=0
+    var edgeVisualReady=false
+    var edgePreparingSince:Double=0
     var hitRegions: [NSRect] = []
     var menuRegions: [NSRect] = []
     var menuGlobalMonitor: Any?
@@ -185,12 +188,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     @objc func openPacks() { pendingSettingsTab="packs";openSettings();selectSettingsTab() }
     func showPet() { endThrough();window?.orderFrontRegardless();updateHitTesting() }
     func enterEdgeQuiet() {
-        guard !edgeQuiet,let screen=motionScreen() else { return }
-        stopNativeMotion("edge_quiet");savePosition();endThrough();reminderAudio?.stop();edgeQuiet=true;petTaps=PetTapSequence()
+        guard !edgeQuiet,motionScreen() != nil else { return }
+        stopNativeMotion("edge_quiet");savePosition()
+        let centerX=window.frame.minX+bodyRect().midX
+        endThrough();reminderAudio?.stop();edgeQuiet=true;petTaps=PetTapSequence()
+        edgeToken+=1;edgeVisualReady=false;edgePreparingSince=ProcessInfo.processInfo.systemUptime
         window.level = .statusBar
-        let bounds=motionBounds(screen)
-        window.setFrameOrigin(NSPoint(x:max(bounds.minX,min(window.frame.minX,bounds.maxX)),y:bounds.minY))
-        ensureVisible();runtimeLog.record("edge_quiet_enter");tick();updateHitTesting()
+        window.setFrameOrigin(NSPoint(x:centerX-bodyRect().midX,y:window.frame.minY))
+        ensureVisible();runtimeLog.record("edge_quiet_enter");tick();startEdgeDescent();updateHitTesting()
+    }
+    func startEdgeDescent() {
+        guard edgeQuiet,let screen=motionScreen(),window.frame.minY>motionBounds(screen).minY+0.5 else { return }
+        motion.dock(position:window.frame.origin);inputBusy=true;resetMotionTelemetry()
+        runPet("command",["name":"nativeMotionStarted"])
     }
     func leaveEdgeQuiet() {
         guard edgeQuiet else { return };edgeQuiet=false;window.level = .floating
@@ -280,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         runtimeLog.record(dragged ? "drag_release" : "pet_tap",motionFields())
         runPet("command",["name":"nativeRelease","dragged":dragged,"flung":motion.phase == .flight])
         inputBusy=motion.active;updateHitTesting();if !inputBusy { savePosition() }
-        if petTaps.record(now:ProcessInfo.processInfo.systemUptime,dragged:dragged) { leaveEdgeQuiet();startWalk(flee:true) }
+        if petTaps.record(now:ProcessInfo.processInfo.systemUptime,dragged:dragged) { leaveEdgeQuiet();startWalk(flee:true) } else if edgeQuiet && !dragged { startEdgeDescent() }
     }
     func stopNativeMotion(_ reason: String) {
         guard motion.active else { return };menuBlockedUntil=ProcessInfo.processInfo.systemUptime+0.7;runtimeLog.record("motion_stopped",motionFields().merging(["reason":reason]) { _,new in new });motion.stop();inputBusy=false
@@ -313,6 +323,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     func advanceMotion() {
         let now=ProcessInfo.processInfo.systemUptime,elapsed=now-motionUptime;motionUptime=now
         guard motion.active,let screen=motionScreen() else { return }
+        if motion.phase == .dock && !edgeVisualReady {
+            if now-edgePreparingSince>4 { stopNativeMotion("edge_animation_not_ready") }
+            return
+        }
         if motion.phase == .walk && motion.walkTarget != nil && !walkVisualReady {
             if now-walkPreparingSince>4 { stopNativeMotion("walk_animation_not_ready") }
             return
@@ -454,7 +468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let agents: [[String:Any]] = AgentID.allCases.map { a in
             ["id":a.rawValue,"name":a.name,"installed":LaunchRouter.appURL(a) != nil,"enabled":!edgeQuiet && !core.state.settings.disabledAgents.contains(a),"status":adapters.report[a.rawValue] ?? ([.dsh,.qwenwork].contains(a) ? BridgeSetup.status(agent:a,home:adapters.home) : "需安装 hook；模式覆盖待真实验证"),"navigation":"打开应用 · 会话定位未启用"]
         }
-        var result:[String:Any] = ["edgeQuiet":edgeQuiet,"menusOnRight":menusOnRight,"through":through,"escape":passThroughExit.status,"chatter":chatter.lines,"settings":encoded(core.state.settings),"activity":core.activity,"bubble":encoded(displayed),"count":items.count,"index":(items.firstIndex { $0.id == displayed?.id } ?? 0)+1,"reminders":encoded(core.state.reminders),"weather":encoded(core.state.weather),"weatherError":weather.error ?? "","calendar":encoded(calendar.items),"calendars":calendar.calendars,"calendarStatus":calendar.status,"packs":encoded(packList),"pack":edgeQuiet ? NSNull() : encoded(currentPack),"agents":agents,"cities":encoded(cities),"info":info,"loginEnabled":SMAppService.mainApp.status == .enabled,"version":"0.1.2-beta","geometry":geometrySnapshot(),"overlayViewport":overlayViewport()]
+        var result:[String:Any] = ["edgeToken":edgeToken,"edgeQuiet":edgeQuiet,"menusOnRight":menusOnRight,"through":through,"escape":passThroughExit.status,"chatter":chatter.lines,"settings":encoded(core.state.settings),"activity":core.activity,"bubble":encoded(displayed),"count":items.count,"index":(items.firstIndex { $0.id == displayed?.id } ?? 0)+1,"reminders":encoded(core.state.reminders),"weather":encoded(core.state.weather),"weatherError":weather.error ?? "","calendar":encoded(calendar.items),"calendars":calendar.calendars,"calendarStatus":calendar.status,"packs":encoded(packList),"pack":edgeQuiet ? NSNull() : encoded(currentPack),"agents":agents,"cities":encoded(cities),"info":info,"loginEnabled":SMAppService.mainApp.status == .enabled,"version":"0.1.2-beta","geometry":geometrySnapshot(),"overlayViewport":overlayViewport()]
         if edgeQuiet {
             var settings=result["settings"] as! [String:Any]
             for key in ["walk","whispers","restEnabled","waterEnabled","reminderSound","calendarAlerts"] { settings[key]=false }
@@ -538,6 +552,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                         stopNativeMotion("edge_test")
                         if let screen=motionScreen() { let b=motionBounds(screen);window.setFrameOrigin(NSPoint(x:(b.minX+b.maxX)/2,y:ui == "topEdge" ? b.maxY : b.minY));ensureVisible();publish() }
                     }
+                    else if ["dockProbeLeft","dockProbeMiddle","dockProbeRight"].contains(ui),let screen=motionScreen() {
+                        stopNativeMotion("dock_probe");leaveEdgeQuiet()
+                        let b=motionBounds(screen),x=ui == "dockProbeLeft" ? b.minX+80 : ui == "dockProbeRight" ? b.maxX-80 : (b.minX+b.maxX)/2
+                        window.setFrameOrigin(NSPoint(x:x,y:b.minY+min(500,(b.maxY-b.minY)*0.7)));ensureVisible();publish()
+                    }
                     else if ui == "settingsSmall" { settingsWindow?.setContentSize(NSSize(width:700,height:520)) }
                     else if ui == "settingsLarge" { settingsWindow?.setContentSize(NSSize(width:860,height:690)) }
                     else if ui == "edgeDragOut",let screen=motionScreen() { beginGrab();let c=NSEvent.mouseLocation;followGrab(cursor:NSPoint(x:c.x,y:c.y+40),now:ProcessInfo.processInfo.systemUptime+0.01,screen:screen);releaseGrab() }
@@ -595,6 +614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
         case "stopMotion": if !isPanel { stopNativeMotion("web_action") }
         case "nativeWalk": if !isPanel,core.activity == "idle",!edgeQuiet { startWalk() }
+        case "edgeAnimationReady": if !isPanel,edgeQuiet,body["token"] as? Int == edgeToken { edgeVisualReady=true;resetMotionTelemetry() }
         case "walkAnimationReady": if !isPanel,body["token"] as? Int == walkToken,motion.phase == .walk { walkVisualReady=true;resetMotionTelemetry() }
         case "runAnimationDirection":
             if !isPanel,let token=body["token"] as? Int,let action=body["action"] as? String,["原地左转奔跑","原地漂浮踏步","螃蟹走路"].contains(action) {

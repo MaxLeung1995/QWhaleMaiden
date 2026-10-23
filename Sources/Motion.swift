@@ -52,7 +52,7 @@ struct PetTapSequence {
 }
 
 struct PetMotion {
-    enum Phase: String { case idle, pressed, drag, flight, walk }
+    enum Phase: String { case idle, pressed, drag, flight, walk, dock }
     var phase: Phase = .idle
     var position = NSPoint.zero
     var velocity = NSPoint.zero
@@ -87,6 +87,7 @@ struct PetMotion {
         phase = hypot(velocity.x,velocity.y)>0 ? .flight : .idle;age=0;samples=[]
         return dragged
     }
+    mutating func dock(position: NSPoint) { stop();self.position=position;phase = .dock }
     mutating func launch(position: NSPoint, velocity: NSPoint) { stop();self.position=position;self.velocity=velocity;phase = .flight }
     static func turnDistance(bounds: MotionBounds, requested: Double=140) -> Double { min(requested,max(0,(bounds.maxX-bounds.minX)/3)) }
     static func walkDirection(position: NSPoint,bounds: MotionBounds,randomDirection: Double,nearDistance: Double=140) -> Double {
@@ -105,11 +106,17 @@ struct PetMotion {
     mutating func translate(x: Double) { position.x+=x;grabOffset.x+=x;if walkTarget != nil { walkTarget!.x+=x } }
     // Native coordinates point up. Substeps make collision/settling independent of display refresh rate.
     mutating func advance(seconds: Double, bounds: MotionBounds) -> [String] {
-        guard phase == .flight || phase == .walk else { return [] }
+        guard phase == .flight || phase == .walk || phase == .dock else { return [] }
         guard seconds.isFinite,[position.x,position.y,velocity.x,velocity.y,bounds.minX,bounds.maxX,bounds.minY,bounds.maxY].allSatisfy(\.isFinite),bounds.minX<=bounds.maxX,bounds.minY<=bounds.maxY else { stop();return ["invalid_motion"] }
         accumulator+=max(0,min(0.15,seconds));var collisions=Set<String>()
         while accumulator+1e-10>=1.0/120 && active {
             let dt=1.0/120;accumulator=max(0,accumulator-dt);age+=dt
+            if phase == .dock {
+                velocity.y=max(-1000,velocity.y-1400*dt)
+                position.y=max(bounds.minY,position.y+velocity.y*dt)
+                if position.y<=bounds.minY { stop();collisions.insert("docked") }
+                continue
+            }
             if phase == .walk {
                 if let target=walkTarget {
                     let end=bounds.clamp(target),gap=hypot(end.x-position.x,end.y-position.y),speed=hypot(velocity.x,velocity.y)

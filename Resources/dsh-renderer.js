@@ -3,7 +3,7 @@
 const DSHPet=(()=>{
  const art=document.querySelector('#art'),videos=[...art.querySelectorAll('video')],poster=document.querySelector('#poster');
  let active=-1,request=0,currentMode='',action='',reduced=false,disabled=false,previewing=false,lastError='',wanted='',lastCategory='',history=[];
- const groupBags=new Map(),directionRequests=new Map();let runDirection=1,nextWalkAction='',walkToken=0;
+ const groupBags=new Map(),directionRequests=new Map();let runDirection=1,nextWalkAction='',walkToken=0,edgeToken=0;
  // Verified against decoded frames: both side-on clips face left. Floating steps face front.
  const runClips={'原地左转奔跑':{facing:-1,start:2,end:4},'螃蟹走路':{facing:-1,start:2,end:7}};
  const movingActions=new Set(Object.keys(runClips));
@@ -30,14 +30,14 @@ const DSHPet=(()=>{
  function pickMode(mode){const name=mode==='walk'&&nextWalkAction?nextWalkAction:pick(pools[mode]||pools.idle);nextWalkAction='';return name}
  async function play(name){
   if(!DSH_CATALOG.all.includes(name)||disabled)return;
-  const token=++request;wanted=name;
+  const token=++request,edgeRequest=edgeToken;wanted=name;
   for(const [old,resolve] of directionRequests)if(old!==token)resolve(0);
   const direction=movingActions.has(name)?await chooseDirection(token,name):1;
   if(token!==request)return;
   if(!direction){play('待机呼吸休闲');return}
   const slot=active===0?1:0,v=videos[slot];orient(v,name,direction);
-  v.oncanplay=null;v.onseeked=null;v.onerror=null;v.onended=null;v.ontimeupdate=null;v.pause();v.classList.remove('active');v.muted=true;v.loop=currentMode==='edgeQuiet';
-  const segment=currentMode==='walk'?runClips[name]:null;
+  v.oncanplay=null;v.onseeked=null;v.onerror=null;v.onended=null;v.ontimeupdate=null;v.pause();v.classList.remove('active');v.muted=true;v.loop=false;
+  const segment=currentMode==='walk'?runClips[name]:currentMode==='edgeQuiet'?{start:2.8,end:7.6}:null;
   // Seek before exposing a running clip. Its full version includes a turn and a fall.
   const start=async()=>{
    if(token!==request||v.seeking)return;
@@ -47,6 +47,7 @@ const DSHPet=(()=>{
     await v.play();if(token!==request){v.pause();return}
     if(reduced)v.pause();
     const old=active;active=slot;action=name;history.push(name);if(history.length>24)history.shift();lastError='';v.classList.add('active');poster.hidden=true;
+    if(currentMode==='edgeQuiet')window.webkit?.messageHandlers?.starbud?.postMessage({type:'edgeAnimationReady',token:edgeRequest});
     if(currentMode==='walk')window.webkit?.messageHandlers?.starbud?.postMessage({type:'walkAnimationReady',token:walkToken});
     if(old>=0&&old!==slot){videos[old].classList.remove('active');videos[old].pause()}
    }catch(error){lastError=String(error);poster.hidden=active>=0;window.webkit?.messageHandlers?.starbud?.postMessage({type:'runtimeDiagnostic',event:'video_error',message:lastError});}
@@ -58,6 +59,7 @@ const DSHPet=(()=>{
   v.src='dsh/mov/'+encodeURIComponent(name)+'.mov';v.load();
  }
  return {
+  setEdgeToken(token){edgeToken=token},
   setWalkToken(token){walkToken=token},
   resumeIdle(){if(currentMode==='idle'&&videos[active]?.ended)play(randomAction())},
   setNextWalkAction(name){if(pools.walk.includes(name))nextWalkAction=name},
@@ -72,7 +74,7 @@ const DSHPet=(()=>{
   diagnostics(){
    const v=videos[active],r=document.querySelector('#pet').getBoundingClientRect();let alpha=null;
    if(v&&v.readyState>=2){try{const c=document.createElement('canvas');c.width=640;c.height=360;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(v,0,0,640,360);const p=x.getImageData(0,0,640,360).data;let transparent=0,exactTransparent=0,visible=0,minX=640,minY=360,maxX=0,maxY=0;for(let i=3;i<p.length;i+=4){if(p[i]===0)exactTransparent++;if(p[i]<=2)transparent++;if(p[i]>32){visible++;const n=(i-3)/4,px=n%640,py=Math.floor(n/640);minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py)}}alpha={transparent,exactTransparent,transparentThreshold:2,visible,bounds:[minX,minY,maxX,maxY]}}catch(e){alpha={error:String(e)}}}
-   return{edgeLoop:currentMode==='edgeQuiet'&&!!v?.loop,runDirection,baseFacing:runClips[action]?.facing||0,runSegment:currentMode==='walk'?runClips[action]||null:null,clipTransform:v?getComputedStyle(v).transform:"",clipMirror:v?Number(v.style.getPropertyValue('--clip-mirror')||1):1,visibleVideoCount:videos.filter(v=>{const s=getComputedStyle(v);return s.visibility!=='hidden'&&Number(s.opacity)>0}).length,videoTransition:getComputedStyle(videos[0]).transitionDuration,renderer:'dsh-hevc-alpha',randomCount:DSH_CATALOG.randomCount,randomCategory:lastCategory,history:[...history],action,wanted,mode:currentMode,ready:!!v&&v.readyState>=2,time:v?.currentTime||0,paused:v?.paused??true,error:lastError,body:{x:r.x,y:r.y,width:r.width,height:r.height},alpha};
+   return{edgeLoop:currentMode==='edgeQuiet',edgeSegment:currentMode==='edgeQuiet'?{start:2.8,end:7.6}:null,runDirection,baseFacing:runClips[action]?.facing||0,runSegment:currentMode==='walk'?runClips[action]||null:null,clipTransform:v?getComputedStyle(v).transform:"",clipMirror:v?Number(v.style.getPropertyValue('--clip-mirror')||1):1,visibleVideoCount:videos.filter(v=>{const s=getComputedStyle(v);return s.visibility!=='hidden'&&Number(s.opacity)>0}).length,videoTransition:getComputedStyle(videos[0]).transitionDuration,renderer:'dsh-hevc-alpha',randomCount:DSH_CATALOG.randomCount,randomCategory:lastCategory,history:[...history],action,wanted,mode:currentMode,ready:!!v&&v.readyState>=2,time:v?.currentTime||0,paused:v?.paused??true,error:lastError,body:{x:r.x,y:r.y,width:r.width,height:r.height},alpha};
   }
  };
 })();

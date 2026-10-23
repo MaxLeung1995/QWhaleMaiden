@@ -61,17 +61,17 @@ try:
  call('verify','--toggle','restEnabled');call('verify','--toggle','waterEnabled');call('verify','--focus','start');time.sleep(.3)
  capture();wait(lambda:settings()['effective']['focusMode']=='running')
  original=settings()['effective']
- capture('edgeQuiet');time.sleep(.8);d=capture();status=call('status')
+ capture('edgeQuiet');wait(lambda:call('status')['motion']['edgeQuiet']);wait(lambda:call('status')['motion']['phase']=='idle');time.sleep(.3);d=capture();status=call('status')
  paused=settings()['effective']
  check(not any(paused[k] for k in ['walk','whispers','rest','water','sound']) and not any(paused['agents']),'edge quiet temporarily switches off wandering chatter and all alert sources')
  check(paused['focusMode']=='paused','focus displays paused during edge quiet')
  check(status['motion']['edgeQuiet'] and d['pet']['mode']=='edgeQuiet','edge quiet activates native docking and hiding animation')
  check(status['bodyScreenRect'][3]>100 and abs(status['geometry']['y']-status['geometry']['maxY'])<1,'full-body feet align with the physical bottom boundary')
- check(d['pet']['action']=='原地重力下蹲压缩' and d['pet']['edgeLoop'] and not d['pet']['paused'],'full compression animation loops without trimming')
+ check(d['pet']['action']=='原地重力下蹲压缩' and d['pet']['edgeLoop'] and not d['pet']['paused'],'crouching segment loops without the standing transition')
  check(d['ui']['noticeHidden'] and not d['ui']['barVisible'] and not d['ui']['moreOpen'],'docking closes menus and notification surfaces')
  samples=[]
  for _ in range(3):time.sleep(4);samples.append(capture()['pet'])
- check(all(x['mode']=='edgeQuiet' and 0<=x['time']<=10.1 and x['edgeLoop'] for x in samples),'full compression animation keeps looping without random actions')
+ check(all(x['mode']=='edgeQuiet' and 2.7<=x['time']<=7.8 and x['edgeLoop'] for x in samples),'crouching loop stays inside its trimmed interval')
  quiet=settings()['effective']
  check(all(quiet[k]==paused[k] for k in ['focusRemaining','restElapsed','waterElapsed']),'focus rest and water clocks do not advance while quiet')
  ui('autoWalkDue');check(call('status')['motion']['phase']=='idle','automatic wandering stays paused while docked')
@@ -90,8 +90,8 @@ try:
  check(not call('status')['motion']['edgeQuiet'] and call('status')['bodyScreenRect'][3]>100,'dragging restores the full body and exits docking')
  call('verify','--tab','companion');time.sleep(.4);capture()
  # Use the same native through handler as the management button, then the existing escape gesture.
- ui('through');time.sleep(.6);check(call('status')['through'],'mouse pass-through still uses the existing native implementation')
- ui('escapeGesture');time.sleep(.2);check(not call('status')['through'],'existing three-finger escape restores mouse interaction')
+ ui('through');wait(lambda:call('status')['through']);check(call('status')['through'],'mouse pass-through still uses the existing native implementation')
+ ui('escapeGesture');wait(lambda:not call('status')['through']);check(not call('status')['through'],'existing three-finger escape restores mouse interaction')
  logs=[json.loads(row) for f in (ROOT/'state/logs').glob('*.jsonl') for row in f.read_text().splitlines()]
  check(not [r for r in logs if r['level']=='error'],'no native, webpage or video errors during docking and settings checks')
  (REPORT/'results.json').write_text(json.dumps(checks,ensure_ascii=False,indent=2))

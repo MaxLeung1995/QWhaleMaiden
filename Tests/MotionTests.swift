@@ -93,6 +93,15 @@ import Foundation
     taps=PetTapSequence()
     _=taps.record(now:0,dragged:false);_=taps.record(now:1,dragged:false)
     check(!taps.record(now:2,dragged:false),"slow taps do not trigger flee")
+    for hz in [30.0,60.0,120.0] {
+        m.dock(position:NSPoint(x:246.5,y:500));var previous=m.position.y
+        for _ in 0..<Int(hz*5) where m.active {
+            _=m.advance(seconds:1/hz,bounds:bounds)
+            precondition(m.position.x==246.5 && m.position.y<=previous && m.position.y>=bounds.minY)
+            previous=m.position.y
+        }
+        check(!m.active && m.position.y==bounds.minY,"quiet descent stays vertical, lands once and never bounces at \(Int(hz)) Hz")
+    }
     let root=URL(fileURLWithPath:NSTemporaryDirectory()).appendingPathComponent("starbud-log-test-"+UUID().uuidString)
     defer { try? FileManager.default.removeItem(at:root) }
     let log=RuntimeLog(directory:root,limit:1024,retained:3)
