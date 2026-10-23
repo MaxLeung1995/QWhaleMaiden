@@ -3,7 +3,7 @@
 const DSHPet=(()=>{
  const art=document.querySelector('#art'),videos=[...art.querySelectorAll('video')],poster=document.querySelector('#poster');
  let active=-1,request=0,currentMode='',action='',reduced=false,disabled=false,previewing=false,lastError='',wanted='',lastCategory='',history=[];
- const groupBags=new Map(),directionRequests=new Map();let runDirection=1,nextWalkAction='';
+ const groupBags=new Map(),directionRequests=new Map();let runDirection=1,nextWalkAction='',walkToken=0;
  // Verified against decoded frames: both side-on clips face left. Floating steps face front.
  const runClips={'原地左转奔跑':{facing:-1,start:2,end:4},'螃蟹走路':{facing:-1,start:2,end:7}};
  const movingActions=new Set(Object.keys(runClips));
@@ -47,16 +47,19 @@ const DSHPet=(()=>{
     await v.play();if(token!==request){v.pause();return}
     if(reduced)v.pause();
     const old=active;active=slot;action=name;history.push(name);if(history.length>24)history.shift();lastError='';v.classList.add('active');poster.hidden=true;
+    if(currentMode==='walk')window.webkit?.messageHandlers?.starbud?.postMessage({type:'walkAnimationReady',token:walkToken});
     if(old>=0&&old!==slot){videos[old].classList.remove('active');videos[old].pause()}
    }catch(error){lastError=String(error);poster.hidden=active>=0;window.webkit?.messageHandlers?.starbud?.postMessage({type:'runtimeDiagnostic',event:'video_error',message:lastError});}
   };
   v.oncanplay=start;v.onseeked=start;
   v.onerror=()=>{if(token!==request)return;lastError='无法解码 '+name;window.webkit?.messageHandlers?.starbud?.postMessage({type:'runtimeDiagnostic',event:'video_error',message:lastError});/* Keep previous frame or poster, never show a black replacement. */};
   v.ontimeupdate=()=>{if(token===request&&segment&&currentMode==='walk'&&v.currentTime>=segment.end-.15&&!v.seeking)v.currentTime=segment.start};
-  v.onended=()=>{if(token!==request||disabled||reduced)return;if(previewing){previewing=false;play('待机呼吸休闲');return}if(currentMode==='idle'){play(randomAction());return}play(pickMode(currentMode))};
+  v.onended=()=>{if(token!==request||disabled||reduced)return;if(currentMode==='idle'&&window.onPetAnimationEnded?.())return;if(previewing){previewing=false;play('待机呼吸休闲');return}if(currentMode==='idle'){play(randomAction());return}play(pickMode(currentMode))};
   v.src='dsh/mov/'+encodeURIComponent(name)+'.mov';v.load();
  }
  return {
+  setWalkToken(token){walkToken=token},
+  resumeIdle(){if(currentMode==='idle'&&videos[active]?.ended)play(randomAction())},
   setNextWalkAction(name){if(pools.walk.includes(name))nextWalkAction=name},
   setRunDirection(direction){runDirection=direction<0?-1:1;if(currentMode==='walk')videos.forEach((v,index)=>{if(index===active)orient(v,action,runDirection);else orient(v,wanted,runDirection)})},
   set(mode,quiet){

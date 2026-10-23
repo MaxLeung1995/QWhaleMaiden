@@ -63,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     var lockFD: Int32 = -1
     var lastTick = ProcessInfo.processInfo.systemUptime
     var nextWalk: Double = 0
+    var petTaps=PetTapSequence()
+    var walkToken=0
+    var walkVisualReady=false
+    var walkPreparingSince:Double=0
     var nextWhisper: Double = 0
     var observers: [NSObjectProtocol] = []
     var currentPack: InstalledPack?
@@ -109,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             calendar.changed = { [weak self] in guard let self = self else { return }; self.calendar.refresh(core:self.core); self.publish() }
             calendar.refresh(core:core)
             adapters.poll(forceScan:true)
-            nextWalk = Date().timeIntervalSince1970 + Double.random(in:40...90)
+            nextWalk = Date().timeIntervalSince1970 + Double.random(in:120...300)
             nextWhisper = Date().timeIntervalSince1970 + Double.random(in:30...60)
             timer = Timer.scheduledTimer(withTimeInterval:1,repeats:true) { [weak self] _ in self?.tick() }
             weather.refresh(core:core) { [weak self] in self?.publish() }
@@ -275,6 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         runtimeLog.record(dragged ? "drag_release" : "pet_tap",motionFields())
         runPet("command",["name":"nativeRelease","dragged":dragged,"flung":motion.phase == .flight])
         inputBusy=motion.active;updateHitTesting();if !inputBusy { savePosition() }
+        if petTaps.record(now:ProcessInfo.processInfo.systemUptime,dragged:dragged) { startWalk(flee:true) }
     }
     func stopNativeMotion(_ reason: String) {
         guard motion.active else { return };menuBlockedUntil=ProcessInfo.processInfo.systemUptime+0.7;runtimeLog.record("motion_stopped",motionFields().merging(["reason":reason]) { _,new in new });motion.stop();inputBusy=false
@@ -284,16 +289,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard let screen=motionScreen() else { return Bool.random() ? -1 : 1 }
         return PetMotion.walkDirection(position:window.frame.origin,bounds:motionBounds(screen),randomDirection:Bool.random() ? -1 : 1)
     }
-    func startWalk() {
-        guard !motion.isGrabbing,!core.state.settings.reducedMotion,core.state.settings.walk else { return }
-        let direction=chooseRunDirection()
-        runPet("command",["name":"nativeMotionStarted"]);motion.walk(position:window.frame.origin,direction:direction);inputBusy=true;resetMotionTelemetry()
-        runPet("command",["name":"nativeWalkDirection","direction":direction,"remaining":motion.walkRemaining]);runtimeLog.record("walk_start",motionFields())
+    func startWalk(flee: Bool=false) {
+        guard !motion.active,!through,!hidden,!core.state.settings.reducedMotion,(flee || core.state.settings.walk),let screen=motionScreen() else { return }
+        let bounds=motionBounds(screen),distance=flee ? 300 : Double.random(in:130...200)
+        let angles=(0..<12).map { Double($0)*Double.pi/6+Double.random(in:-0.12...0.12) }.shuffled()
+        guard let route=WalkRoute.choose(position:window.frame.origin,bounds:bounds,distance:distance,angles:angles) else { return }
+        motion.walk(position:window.frame.origin,target:route.target,speed:flee ? 120 : 100)
+        guard motion.active else { return }
+        walkToken+=1;walkVisualReady=false;walkPreparingSince=ProcessInfo.processInfo.systemUptime
+        inputBusy=true;resetMotionTelemetry();nextWalk=Date().timeIntervalSince1970+Double.random(in:120...300)
+        runPet("command",["name":"nativeMotionStarted"])
+        runPet("command",["name":"nativeWalkDirection","direction":motion.velocity.x<0 ? -1 : 1,"remaining":motion.walkRemaining,"token":walkToken,"flee":flee])
+        runtimeLog.record(flee ? "flee_start" : "walk_start",motionFields().merging(["target":[route.target.x,route.target.y],"distance":route.distance]) { _,new in new })
     }
-    func motionFields() -> [String:Any] { ["phase":motion.phase.rawValue,"x":window.frame.minX,"y":window.frame.minY,"vx":motion.velocity.x,"vy":motion.velocity.y,"through":through] }
+    func motionFields() -> [String:Any] { ["phase":motion.phase.rawValue,"x":window.frame.minX,"y":window.frame.minY,"vx":motion.velocity.x,"vy":motion.velocity.y,"through":through,"walkVisualReady":walkVisualReady,"nextWalkIn":max(0,nextWalk-Date().timeIntervalSince1970)] }
     func advanceMotion() {
         let now=ProcessInfo.processInfo.systemUptime,elapsed=now-motionUptime;motionUptime=now
         guard motion.active,let screen=motionScreen() else { return }
+        if motion.phase == .walk && motion.walkTarget != nil && !walkVisualReady {
+            if now-walkPreparingSince>4 { stopNativeMotion("walk_animation_not_ready") }
+            return
+        }
         motionFrames+=1;motionMaxFrameMS=max(motionMaxFrameMS,elapsed*1000)
         var collisions:[String]=[]
         let oldDirection=motion.velocity.x
@@ -374,7 +390,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if Int(now) % 2 == 0 { adapters.poll() }
         if Int(now) % 60 == 0 { calendar.refresh(core:core); weather.refresh(core:core) { [weak self] in self?.publish() } }
         calendar.tick(core:core,now:now)
-        if now >= nextWalk { nextWalk = now+Double.random(in:40...90); if core.state.settings.walk && !core.state.settings.reducedMotion && core.activity == "idle" && !inputBusy && !hidden && core.state.settings.quietUntil <= now { runPet("command",["name":"walk"]) } }
+        if now >= nextWalk { nextWalk = now+Double.random(in:120...300); if core.state.settings.walk && !core.state.settings.reducedMotion && core.activity == "idle" && !inputBusy && !hidden && core.state.settings.quietUntil <= now { runPet("command",["name":"walk"]) } }
         if now >= nextWhisper {
             nextWhisper = now+Double.random(in:120...240)
             if core.state.settings.whispers && core.activity == "idle" && !inputBusy && !hidden && core.state.settings.quietUntil <= now { emitWhisper() }
@@ -497,7 +513,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 if let scenario=object["scenario"] as? String { core.ephemeral.removeAll { $0.category == "whisper" };if scenario == "whisper" { core.addBubble(category:"whisper",title:"QWhaleMaiden",summary:"慢慢来，先做眼前这一步。",priority:10,lifetime:30) };tick() }
                 if let focus=object["focus"] as? String,["start","pause","resume","cancel","break"].contains(focus) { settingsView?.evaluateJavaScript("document.querySelector('[data-focus=\"\(focus)\"]').click()",completionHandler:nil) }
                 if let ui=object["petUI"] as? String {
-                    let actions=["ackReminder":"document.querySelector('#ackReminder').click()","laterReminder":"document.querySelector('#later').click()","quiet":"document.querySelector('[data-control=quiet]').click()","bar":"showBar()","menuProbe":"showBar();document.querySelector('#pet').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true}));document.querySelector('#pet').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))","more":"showBar();if(document.querySelector('#morePanel').hidden)document.querySelector('#controlsButton').click()","interact":"document.querySelector('[data-more-tab=interact]').click()","tools":"document.querySelector('[data-more-tab=tools]').click()","manage":"document.querySelector('[data-more-tab=manage]').click()","focus":"document.querySelector('#focusToggle').click()","pause":"document.querySelector('#pauseQuick').click()","whisper":"document.querySelector('#saySomething').click()","escape":"document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))","idle":"transientUntil=0;forcedSleep=false;lastInteract=Date.now()-120000;state.activity='idle';updateMode()","feed":"document.querySelector('[data-pet=eat]').click()","through":"document.querySelector('[data-control=through]').click()","settingsRecover":"document.querySelector('#exitThrough').click()","widgets":"document.querySelector('#toggleWidgets').click()","focusSettings":"document.querySelector('#focusSettings').click()","calendar":"document.querySelector('#miniCalendar').click()","nextRandom":"(()=>{let v=document.querySelector('#art video.active');if(v&&Number.isFinite(v.duration))v.currentTime=v.duration-.03})()"]
+                    let actions=["idleFresh":"transientUntil=0;forcedSleep=false;state.activity='idle';updateMode();DSHPet.stop();DSHPet.set('idle',false)","queueWalk":"window.command({name:'walk'})","finishIdle":"(()=>{let v=document.querySelector('#art video.active');if(v&&Number.isFinite(v.duration))v.currentTime=v.duration-.03})()","ackReminder":"document.querySelector('#ackReminder').click()","laterReminder":"document.querySelector('#later').click()","quiet":"document.querySelector('[data-control=quiet]').click()","bar":"showBar()","menuProbe":"showBar();document.querySelector('#pet').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true}));document.querySelector('#pet').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))","more":"showBar();if(document.querySelector('#morePanel').hidden)document.querySelector('#controlsButton').click()","interact":"document.querySelector('[data-more-tab=interact]').click()","tools":"document.querySelector('[data-more-tab=tools]').click()","manage":"document.querySelector('[data-more-tab=manage]').click()","focus":"document.querySelector('#focusToggle').click()","pause":"document.querySelector('#pauseQuick').click()","whisper":"document.querySelector('#saySomething').click()","escape":"document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))","idle":"transientUntil=0;forcedSleep=false;lastInteract=Date.now()-120000;state.activity='idle';updateMode()","feed":"document.querySelector('[data-pet=eat]').click()","through":"document.querySelector('[data-control=through]').click()","settingsRecover":"document.querySelector('#exitThrough').click()","widgets":"document.querySelector('#toggleWidgets').click()","focusSettings":"document.querySelector('#focusSettings').click()","calendar":"document.querySelector('#miniCalendar').click()","nextRandom":"(()=>{let v=document.querySelector('#art video.active');if(v&&Number.isFinite(v.duration))v.currentTime=v.duration-.03})()"]
                     if ui == "throwVertical" || ui == "throwDiagonal" || ui == "throwLeft" {
                         if let screen=motionScreen() { let b=motionBounds(screen),start=NSPoint(x:(b.minX+b.maxX)/2,y:(b.minY+b.maxY)/2);window.setFrameOrigin(start);runPet("command",["name":"nativeMotionStarted"]);motion.launch(position:start,velocity:NSPoint(x:ui == "throwVertical" ? 0 : ui == "throwLeft" ? -1800 : 1400,y:1100));inputBusy=true;resetMotionTelemetry();runtimeLog.record("test_throw",motionFields()) }
                     }
@@ -505,6 +521,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                         stopNativeMotion("edge_test")
                         if let screen=motionScreen() { let b=motionBounds(screen);window.setFrameOrigin(NSPoint(x:(b.minX+b.maxX)/2,y:ui == "topEdge" ? b.maxY : b.minY));ensureVisible();publish() }
                     }
+                    else if ui == "petTap" { beginGrab();releaseGrab() }
+                    else if ui == "autoWalkDue" { nextWalk=0;tick() }
+                    else if ui == "stopWalk" { stopNativeMotion("test_stop") }
                     else if ui == "walkLeftEdge" || ui == "walkRightEdge" || ui == "walkMiddle" || ui == "runClipLeftEdge" || ui == "runClipRightEdge" {
                         stopNativeMotion("walk_test")
                         if let screen=motionScreen() { let b=motionBounds(screen);let x=["walkLeftEdge","runClipLeftEdge"].contains(ui) ? b.minX+20 : ["walkRightEdge","runClipRightEdge"].contains(ui) ? b.maxX-20 : (b.minX+b.maxX)/2;window.setFrameOrigin(NSPoint(x:x,y:b.minY));ensureVisible();if ui.hasPrefix("runClip") { runPet("command",["name":"builtinAction","action":"原地左转奔跑"]) } else { startWalk() } }
@@ -555,7 +574,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             else { stopNativeMotion(reason) }
         }
         case "stopMotion": if !isPanel { stopNativeMotion("web_action") }
-        case "nativeWalk": if !isPanel { startWalk() }
+        case "nativeWalk": if !isPanel,core.activity == "idle",core.state.settings.quietUntil<=Date().timeIntervalSince1970 { startWalk() }
+        case "walkAnimationReady": if !isPanel,body["token"] as? Int == walkToken,motion.phase == .walk { walkVisualReady=true;resetMotionTelemetry() }
         case "runAnimationDirection":
             if !isPanel,let token=body["token"] as? Int,let action=body["action"] as? String,["原地左转奔跑","原地漂浮踏步","螃蟹走路"].contains(action) {
                 let direction=chooseRunDirection();runPet("resolveRunDirection",["token":token,"direction":direction]);runtimeLog.record("animation_direction",["action":action,"direction":direction])
@@ -610,9 +630,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard let key=body["key"] as? String else { return }
         let flag=body["value"] as? Bool ?? false
         switch key {
-        case "walk":core.state.settings.walk=flag
+        case "walk":core.state.settings.walk=flag;if !flag && motion.phase == .walk { stopNativeMotion("walk_disabled") }
         case "whispers":core.state.settings.whispers=flag
-        case "reducedMotion":core.state.settings.reducedMotion=flag
+        case "reducedMotion":core.state.settings.reducedMotion=flag;if flag { stopNativeMotion("reduced_motion") }
         case "reminderSound":core.state.settings.reminderSound=flag
         case "preview":core.state.settings.preview=flag
         case "restEnabled":core.state.settings.restEnabled=flag; core.state.reminders.rest=0;core.state.reminders.restSnooze=nil

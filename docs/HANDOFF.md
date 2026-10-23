@@ -12,6 +12,8 @@ Settings sidebar uses a transparent generated head portrait (`Resources/settings
 
 106 built-in DSH-pet animations; body reference height 132 points. Toolbar 132×28, More panel 244×248. Agent background opacity 85%, local/wellness bubble 75%. Default focus 45 minutes. Motion menu suppression uses native and web guards plus 700ms post-motion cooldown. Bounds derive from current NSScreen visibleFrame and body geometry.
 
+Occasional walking now uses a 120–300 second interval, waits for the current built-in idle video (or sprite cycle) to end, then takes a two-dimensional 130–200 point route at 100 points/s. Three genuine taps within 1.5 seconds escape up to 300 points at 120 points/s (shorter on small screens). Directions fit the complete endpoint inside live screen body bounds; side-on clips mirror by horizontal velocity, and movement waits for the running video to be ready. Dragging clears the tap sequence; reduced motion disables escape. No fixed sleep destination is implemented.
+
 Source IDs: codex, workbuddy, trae, lingxi, dsh, qwenwork. QwenWorkCN is distinct from Qianwen chat. Notifications open the app by Bundle ID; deep links are not enabled. DSH and QwenWork integration has isolated-chain coverage, not complete real-host acceptance.
 
 ## Known limits

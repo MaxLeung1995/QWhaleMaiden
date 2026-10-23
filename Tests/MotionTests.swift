@@ -57,6 +57,42 @@ import Foundation
     check(MotionBounds.screenIndex(frames:[displays[0]],body:NSRect(x:-1000,y:300,width:112,height:132))==0,"unplugged display recovers nearest remaining display")
     let tiny=MotionBounds.forScreen(NSRect(x:0,y:0,width:80,height:80),body:NSRect(x:200,y:200,width:112,height:132),windowHeight:700)
     check(tiny.minX<=tiny.maxX && tiny.minY<=tiny.maxY,"oversized pet on tiny display keeps valid collision bounds")
+    let angles=(0..<12).map { Double($0)*Double.pi/6 }
+    for point in [NSPoint(x:bounds.minX,y:bounds.minY),NSPoint(x:bounds.maxX,y:bounds.maxY),middle,NSPoint(x:bounds.minX,y:bounds.maxY),NSPoint(x:bounds.maxX,y:bounds.minY)] {
+        for distance in [130.0,200.0,300.0] {
+            let route=WalkRoute.choose(position:point,bounds:bounds,distance:distance,angles:angles)!
+            check(abs(route.target.y-point.y)>1 && abs(route.target.x-point.x)>1,"full-screen route has two axes even at corners")
+            m.walk(position:point,target:route.target,speed:100)
+            for _ in 0..<1000 where m.active {
+                _=m.advance(seconds:1.0/60,bounds:bounds)
+                precondition(m.position==bounds.clamp(m.position))
+            }
+            check(!m.active && hypot(m.position.x-route.target.x,m.position.y-route.target.y)<0.01,"walk reaches its planned endpoint without gravity or overshoot")
+        }
+    }
+    let route=WalkRoute.choose(position:middle,bounds:bounds,distance:300,angles:angles)!
+    var arrivals:[NSPoint]=[]
+    for hz in [30.0,60.0,120.0] {
+        m.walk(position:middle,target:route.target,speed:120)
+        for _ in 0..<Int(hz*5) where m.active { _=m.advance(seconds:1/hz,bounds:bounds) }
+        arrivals.append(m.position)
+    }
+    check(arrivals.allSatisfy { hypot($0.x-route.target.x,$0.y-route.target.y)<0.01 },"diagonal flee endpoint is stable across refresh rates")
+    m.walk(position:middle,target:route.target,speed:120)
+    _=m.advance(seconds:0.1,bounds:bounds);m.stop()
+    check(!m.active && m.walkTarget==nil,"drag interruption discards previous route")
+    m.walk(position:middle,target:route.target,speed:100)
+    let remainingX=m.walkTarget!.x-m.position.x
+    m.translate(x:120)
+    check(abs(m.walkTarget!.x-m.position.x-remainingX)<0.001,"menu side changes translate route endpoint with the pet")
+    var taps=PetTapSequence()
+    check(!taps.record(now:0,dragged:false) && !taps.record(now:0.4,dragged:false) && taps.record(now:0.8,dragged:false),"three genuine taps within 1.5 seconds trigger flee")
+    check(!taps.record(now:1,dragged:false),"triple-tap sequence clears after triggering")
+    _=taps.record(now:1.1,dragged:true)
+    check(!taps.record(now:1.2,dragged:false) && !taps.record(now:1.3,dragged:false),"drag release never completes a triple tap")
+    taps=PetTapSequence()
+    _=taps.record(now:0,dragged:false);_=taps.record(now:1,dragged:false)
+    check(!taps.record(now:2,dragged:false),"slow taps do not trigger flee")
     let root=URL(fileURLWithPath:NSTemporaryDirectory()).appendingPathComponent("starbud-log-test-"+UUID().uuidString)
     defer { try? FileManager.default.removeItem(at:root) }
     let log=RuntimeLog(directory:root,limit:1024,retained:3)

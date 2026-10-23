@@ -22,6 +22,35 @@ struct MotionBounds {
     func clamp(_ point: NSPoint) -> NSPoint { NSPoint(x:max(minX,min(point.x,maxX)),y:max(minY,min(point.y,maxY))) }
 }
 
+// Route selection follows whale-girl's endpoint-first strategy; all coordinates are native points.
+struct WalkRoute {
+    let target: NSPoint
+    let distance: Double
+    static func choose(position: NSPoint,bounds: MotionBounds,distance: Double,angles: [Double]) -> WalkRoute? {
+        let start=bounds.clamp(position),pad=min(6,max(0,min(bounds.maxX-bounds.minX,bounds.maxY-bounds.minY)/4))
+        for scale in [1.0,0.6,0.3] {
+            let span=distance*scale
+            for angle in angles where abs(cos(angle))>=0.34 && abs(cos(angle))<=0.97 {
+                let target=NSPoint(x:start.x+cos(angle)*span,y:start.y+sin(angle)*span)
+                if target.x>=bounds.minX+pad && target.x<=bounds.maxX-pad && target.y>=bounds.minY+pad && target.y<=bounds.maxY-pad { return WalkRoute(target:target,distance:span) }
+            }
+        }
+        let center=NSPoint(x:(bounds.minX+bounds.maxX)/2,y:(bounds.minY+bounds.maxY)/2)
+        let gap=hypot(center.x-start.x,center.y-start.y)
+        guard gap>1 else { return nil }
+        let span=min(distance,gap)
+        return WalkRoute(target:NSPoint(x:start.x+(center.x-start.x)/gap*span,y:start.y+(center.y-start.y)/gap*span),distance:span)
+    }
+}
+struct PetTapSequence {
+    var times: [Double] = []
+    mutating func record(now: Double,dragged: Bool) -> Bool {
+        if dragged { times=[];return false }
+        times=times.filter { now-$0<1.5 && now>=$0 };times.append(now)
+        if times.count>=3 { times=[];return true };return false
+    }
+}
+
 struct PetMotion {
     enum Phase: String { case idle, pressed, drag, flight, walk }
     var phase: Phase = .idle
@@ -33,9 +62,10 @@ struct PetMotion {
     var accumulator: Double = 0
     var age: Double = 0
     var walkRemaining: Double = 0
+    var walkTarget: NSPoint?
     var isGrabbing: Bool { phase == .pressed || phase == .drag }
     var active: Bool { phase != .idle }
-    mutating func stop() { phase = .idle; velocity = .zero; samples=[]; age=0;accumulator=0 }
+    mutating func stop() { walkTarget=nil;walkRemaining=0;phase = .idle; velocity = .zero; samples=[]; age=0;accumulator=0 }
     mutating func grab(position: NSPoint, cursor: NSPoint, now: Double) {
         stop();self.position=position;grabOffset=NSPoint(x:position.x-cursor.x,y:position.y-cursor.y);grabStart=cursor;samples=[(cursor,now)];phase = .pressed
     }
@@ -66,7 +96,13 @@ struct PetMotion {
         return randomDirection<0 ? -1 : 1
     }
     mutating func walk(position: NSPoint, direction: Double) { stop();self.position=position;velocity=NSPoint(x:direction*45,y:0);walkRemaining=3;phase = .walk }
-    mutating func translate(x: Double) { position.x+=x;grabOffset.x+=x }
+    mutating func walk(position: NSPoint,target: NSPoint,speed: Double) {
+        stop();self.position=position
+        let gap=hypot(target.x-position.x,target.y-position.y)
+        guard gap>1,speed>0 else { return }
+        walkTarget=target;walkRemaining=gap/speed;velocity=NSPoint(x:(target.x-position.x)/gap*speed,y:(target.y-position.y)/gap*speed);phase = .walk
+    }
+    mutating func translate(x: Double) { position.x+=x;grabOffset.x+=x;if walkTarget != nil { walkTarget!.x+=x } }
     // Native coordinates point up. Substeps make collision/settling independent of display refresh rate.
     mutating func advance(seconds: Double, bounds: MotionBounds) -> [String] {
         guard phase == .flight || phase == .walk else { return [] }
@@ -75,10 +111,16 @@ struct PetMotion {
         while accumulator+1e-10>=1.0/120 && active {
             let dt=1.0/120;accumulator=max(0,accumulator-dt);age+=dt
             if phase == .walk {
+                if let target=walkTarget {
+                    let end=bounds.clamp(target),gap=hypot(end.x-position.x,end.y-position.y),speed=hypot(velocity.x,velocity.y)
+                    if gap<=speed*dt || speed<=0 || age>=15 { position=end;stop();collisions.insert("walk_arrived");break }
+                    velocity=NSPoint(x:(end.x-position.x)/gap*speed,y:(end.y-position.y)/gap*speed);walkRemaining=gap/speed
+                } else {
                 walkRemaining-=dt;if walkRemaining<=0 { stop();break }
                 let margin=Self.turnDistance(bounds:bounds)
                 if velocity.x<0 && position.x-bounds.minX<=margin { velocity.x=abs(velocity.x);collisions.insert("turn_right") }
                 else if velocity.x>0 && bounds.maxX-position.x<=margin { velocity.x = -abs(velocity.x);collisions.insert("turn_left") }
+                }
             }
             else { velocity.y-=1600*dt;velocity.x*=exp(-0.25*dt) }
             position.x+=velocity.x*dt;position.y+=velocity.y*dt

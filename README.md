@@ -15,6 +15,7 @@ QWhaleMaiden 是基于 **DSH-pet 开源插件**与 **vlln/whale-girl 开源项�
 
 - 拖动、甩抛、弹跳、左右移动；按当前显示器可用区域自动计算边界。
 - 随机动画、离线碎碎念、互动、睡眠与素材包。
+- 每 120–300 秒在屏幕内沿二维路线走动，播完当前原地动画再出发；1.5 秒内轻点三次会跑开，可随时拖住打断。
 - Agent 通知：Codex、WorkBuddy、Trae CN、WPS灵犀、DSH、千问办公QwenWorkCN（不是千问聊天客户端）。
 - 番茄钟（默认 45 分钟）、休息和喝水提醒，提供提示音、动画与气泡。
 - 手选城市天气、可选的 macOS 本地日历只读展示。
@@ -69,6 +70,7 @@ DSH/千问办公已通过隔离插件与原生事件链路测试；真实宿主�
 ```sh
 ./scripts/test-core.sh
 ./scripts/test-motion.sh
+python3 scripts/test-fullscreen-walk.py
 ./scripts/test-assets.sh
 python3 scripts/test-phase2.py
 python3 scripts/test-motion-runtime.py
