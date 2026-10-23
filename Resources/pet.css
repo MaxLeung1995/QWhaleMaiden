@@ -1,0 +1,15 @@
+*{margin:0;padding:0;box-sizing:border-box;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent}
+#stage{position:relative;width:100%;height:100%;font-family:"PingFang SC",sans-serif}
+#art{--pet-scale:1;position:absolute;left:var(--pet-center,50%);bottom:calc(320px - 11.579px * var(--pet-scale));transform:translateX(-50%);width:calc(296.421px * var(--pet-scale));height:calc(166.737px * var(--pet-scale));pointer-events:none}
+#art video,#poster{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none}
+#art video{opacity:0;visibility:hidden}#art video.active{opacity:1;visibility:visible}
+#pet{position:absolute;left:31.25%;top:13.889%;width:37.5%;height:79.167%;pointer-events:auto}
+.fx{position:absolute;pointer-events:none;font-size:16px}
+@keyframes floatUp{0%{opacity:0;transform:translateY(6px) scale(.6)}25%{opacity:1}100%{opacity:0;transform:translateY(-52px) scale(1.15)}}
+
+#stage.menus-right #art{left:var(--pet-center,50%);right:auto}
+
+/* Mirror pixels only; notice text, controls and hit bounds keep their orientation. */
+#art video{transform:scaleX(var(--clip-mirror,1))}
+#stage.mode-walk #customArt{transform:translateX(-50%) scaleX(var(--walk-facing,1))}

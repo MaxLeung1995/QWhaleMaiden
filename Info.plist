@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.local.starbud-pet</string>
+<key>CFBundleName</key><string>QWhaleMaiden</string>
+<key>CFBundleDisplayName</key><string>QWhaleMaiden</string>
+<key>CFBundleExecutable</key><string>QWhaleMaiden</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.1.2</string>
+<key>CFBundleVersion</key><string>3</string>
+<key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>LSUIElement</key><true/>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSCalendarsUsageDescription</key><string>QWhaleMaiden读取你选择的日历，展示今天的日程并按需提醒；不会创建或修改日程。</string>
+<key>NSCalendarsFullAccessUsageDescription</key><string>QWhaleMaiden读取你选择的日历，用于本机日程挂件和可选提醒；不会创建或修改日程，也不上传日历内容。</string>
+</dict></plist>

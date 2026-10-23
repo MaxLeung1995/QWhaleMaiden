@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "packId": "starbud-orbit",
+  "version": "1.0.0",
+  "name": "星环小团",
+  "license": "CC0-1.0",
+  "renderer": "svg",
+  "actions": {
+    "idle": {"file":"idle.svg"},
+    "wait": {"file":"wait.svg"}
+  }
+}
