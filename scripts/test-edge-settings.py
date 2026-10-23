@@ -34,7 +34,12 @@ p=subprocess.Popen([str(APP/'Contents/MacOS/QWhaleMaiden')],env=env,stdout=(REPO
 try:
  wait(lambda:call('status')['ok']);wait(lambda:(REPORT/'settings.png').exists())
  call('verify','--toggle','whispers')
- capture('bar');capture('more');d=capture('manage')
+ capture('bar');capture('more');d=capture('interact')
+ sizes=d['ui']['interactLayout']
+ check(len(sizes)==6 and len({(r['width'],r['height']) for r in sizes})==1,'all six interaction buttons share identical frames')
+ check(all('缩到' not in r['text'] for r in sizes),'interaction copy omits the removed phrase')
+ (REPORT/'interact.png').write_bytes((REPORT/'pet-current.png').read_bytes())
+ d=capture('manage')
  check(d['ui']['manageButtons']==['换个形象','鼠标穿透','全部设置','退出桌宠'],'management contains only the four requested controls')
  rects=d['ui']['manageLayout']
  check(rects[0]['width']==rects[1]['width']==rects[2]['width']==rects[3]['width'] and rects[0]['y']==rects[1]['y'] and rects[2]['y']==rects[3]['y'],'management buttons form a symmetric two by two grid')
@@ -53,20 +58,34 @@ try:
    check(q['title']==title and q['sections']==[tab] and q['documentFits'],size+' '+tab+' has correct grouping with no page overflow')
    check(all(c['x']>=0 and c['x']+c['width']<=width+1 for c in q['controls']),size+' '+tab+' keeps controls inside window')
    time.sleep(.1);(REPORT/(size+'-'+tab+'.png')).write_bytes((REPORT/'panel-current.png').read_bytes())
+ call('verify','--toggle','restEnabled');call('verify','--toggle','waterEnabled');call('verify','--focus','start');time.sleep(.3)
+ capture();wait(lambda:settings()['effective']['focusMode']=='running')
+ original=settings()['effective']
  capture('edgeQuiet');time.sleep(.8);d=capture();status=call('status')
+ paused=settings()['effective']
+ check(not any(paused[k] for k in ['walk','whispers','rest','water','sound']) and not any(paused['agents']),'edge quiet temporarily switches off wandering chatter and all alert sources')
+ check(paused['focusMode']=='paused','focus displays paused during edge quiet')
  check(status['motion']['edgeQuiet'] and d['pet']['mode']=='edgeQuiet','edge quiet activates native docking and hiding animation')
- check(status['bodyScreenRect'][3]<=33 and abs(status['geometry']['y']-status['geometry']['maxY'])<1,'head-only hit target sits exactly on bottom boundary')
- check(d['pet']['action']=='原地重力下蹲压缩' and d['pet']['edgeSegment'] is not None and not d['pet']['paused'],'hiding segment plays as an animation')
+ check(status['bodyScreenRect'][3]>100 and abs(status['geometry']['y']-status['geometry']['maxY'])<1,'full-body feet align with the physical bottom boundary')
+ check(d['pet']['action']=='原地重力下蹲压缩' and d['pet']['edgeLoop'] and not d['pet']['paused'],'full compression animation loops without trimming')
  check(d['ui']['noticeHidden'] and not d['ui']['barVisible'] and not d['ui']['moreOpen'],'docking closes menus and notification surfaces')
  samples=[]
- for _ in range(3):time.sleep(2);samples.append(capture()['pet'])
- check(all(x['mode']=='edgeQuiet' and 2.2<=x['time']<=7.8 for x in samples),'hiding segment continues looping without random actions')
+ for _ in range(3):time.sleep(4);samples.append(capture()['pet'])
+ check(all(x['mode']=='edgeQuiet' and 0<=x['time']<=10.1 and x['edgeLoop'] for x in samples),'full compression animation keeps looping without random actions')
+ quiet=settings()['effective']
+ check(all(quiet[k]==paused[k] for k in ['focusRemaining','restElapsed','waterElapsed']),'focus rest and water clocks do not advance while quiet')
  ui('autoWalkDue');check(call('status')['motion']['phase']=='idle','automatic wandering stays paused while docked')
- call('preview-reminder','--kind','water');check(capture()['ui']['noticeHidden'],'docked reminders do not pop up')
+ for kind in ['focus','rest','water']:
+  call('preview-reminder','--kind',kind);check(capture()['ui']['noticeHidden'],kind+' reminder is disabled while docked')
+ payload={'eventId':uuid.uuid4().hex,'agent':'codex','sessionId':'quiet-check','turnId':'test','type':'turn.ended'}
+ subprocess.run([str(CLI),'event'],input=json.dumps(payload),env=env,capture_output=True,text=True,check=True)
+ check(capture()['ui']['noticeHidden'],'agent events do not display notifications while quiet')
  for _ in range(3):ui('petTap');time.sleep(.12)
  wait(lambda:not call('status')['motion']['edgeQuiet'])
  check(call('status')['motion']['phase']=='walk','triple tap exits docking and runs away')
- wait(lambda:call('status')['motion']['phase']=='idle')
+ wait(lambda:call('status')['motion']['phase']=='idle');capture()
+ restored=settings()['effective']
+ check(all(restored[k]==original[k] for k in ['walk','whispers','rest','water','sound','agents']),'exiting quiet restores the original alert preferences')
  capture('edgeQuiet');time.sleep(.7);capture('edgeDragOut')
  check(not call('status')['motion']['edgeQuiet'] and call('status')['bodyScreenRect'][3]>100,'dragging restores the full body and exits docking')
  call('verify','--tab','companion');time.sleep(.4);capture()

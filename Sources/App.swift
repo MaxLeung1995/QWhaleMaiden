@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     func showPet() { endThrough();window?.orderFrontRegardless();updateHitTesting() }
     func enterEdgeQuiet() {
         guard !edgeQuiet,let screen=motionScreen() else { return }
-        stopNativeMotion("edge_quiet");savePosition();endThrough();edgeQuiet=true;petTaps=PetTapSequence()
+        stopNativeMotion("edge_quiet");savePosition();endThrough();reminderAudio?.stop();edgeQuiet=true;petTaps=PetTapSequence()
         window.level = .statusBar
         let bounds=motionBounds(screen)
         window.setFrameOrigin(NSPoint(x:max(bounds.minX,min(window.frame.minX,bounds.maxX)),y:bounds.minY))
@@ -220,7 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     func bodyRect() -> NSRect {
         let scale=core.state.settings.size
         if !edgeQuiet,currentPack != nil,let rect=hitRegions.first,rect.width>0,rect.height>0 { return rect }
-        return NSRect(x:petAnchor(scale,onRight:menusOnRight)-111.158*scale/2,y:window.frame.height-320-131.984*scale+(edgeQuiet ? 48*scale : 0),width:111.158*scale,height:(edgeQuiet ? 32 : 131.984)*scale)
+        return NSRect(x:petAnchor(scale,onRight:menusOnRight)-111.158*scale/2,y:window.frame.height-320-131.984*scale,width:111.158*scale,height:131.984*scale)
     }
     func bodyScreenRect() -> [Double] {
         let b=bodyRect();return [window.frame.minX+b.minX,window.frame.maxY-b.maxY,b.width,b.height]
@@ -389,14 +389,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if let error=weather.error,recentErrors.insert(error).inserted { runtimeLog.record("weather_error",level:"warning",["message":String(error.prefix(200))]) }
  let dt = max(0,min(5,uptime-lastTick)); lastTick = uptime
         let now = Date().timeIntervalSince1970
-        let reminders = core.state.reminders.advance(seconds:dt,settings:core.state.settings)
+        let reminders = edgeQuiet ? [] : core.state.reminders.advance(seconds:dt,settings:core.state.settings)
         for kind in reminders {
             addWellnessReminder(kind:kind.hasPrefix("focus:") ? "focus" : kind, phase:core.state.reminders.focusPhase)
         }
         if !reminders.isEmpty || Int(now) % 30 == 0 { save() }
         if Int(now) % 2 == 0 { adapters.poll() }
         if Int(now) % 60 == 0 { calendar.refresh(core:core); weather.refresh(core:core) { [weak self] in self?.publish() } }
-        calendar.tick(core:core,now:now)
+        if !edgeQuiet { calendar.tick(core:core,now:now) }
         if now >= nextWalk { nextWalk = now+Double.random(in:120...300); if core.state.settings.walk && !core.state.settings.reducedMotion && core.activity == "idle" && !inputBusy && !edgeQuiet { runPet("command",["name":"walk"]) } }
         if now >= nextWhisper {
             nextWhisper = now+Double.random(in:120...240)
@@ -417,6 +417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         presentWellnessReminder()
     }
     func addWellnessReminder(kind:String,phase:String="work",preview:Bool=false) {
+        guard !edgeQuiet else { return }
         guard let style=WellnessReminder(kind:kind,phase:phase) else { return }
         if preview { core.ephemeral.removeAll { $0.id.hasPrefix("preview-reminder:") } }
         core.addBubble(id:(preview ? "preview-reminder:" : "reminder:")+style.kind+":"+UUID().uuidString,category:style.category,title:style.title,summary:style.message,priority:style.priority,action:style.category,lifetime:60)
@@ -451,9 +452,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         func encoded<T: Encodable>(_ value: T) -> Any { (try? JSONSerialization.jsonObject(with:JSONEncoder().encode(value))) ?? NSNull() }
         let items = core.bubbles()
         let agents: [[String:Any]] = AgentID.allCases.map { a in
-            ["id":a.rawValue,"name":a.name,"installed":LaunchRouter.appURL(a) != nil,"enabled":!core.state.settings.disabledAgents.contains(a),"status":adapters.report[a.rawValue] ?? ([.dsh,.qwenwork].contains(a) ? BridgeSetup.status(agent:a,home:adapters.home) : "需安装 hook；模式覆盖待真实验证"),"navigation":"打开应用 · 会话定位未启用"]
+            ["id":a.rawValue,"name":a.name,"installed":LaunchRouter.appURL(a) != nil,"enabled":!edgeQuiet && !core.state.settings.disabledAgents.contains(a),"status":adapters.report[a.rawValue] ?? ([.dsh,.qwenwork].contains(a) ? BridgeSetup.status(agent:a,home:adapters.home) : "需安装 hook；模式覆盖待真实验证"),"navigation":"打开应用 · 会话定位未启用"]
         }
         var result:[String:Any] = ["edgeQuiet":edgeQuiet,"menusOnRight":menusOnRight,"through":through,"escape":passThroughExit.status,"chatter":chatter.lines,"settings":encoded(core.state.settings),"activity":core.activity,"bubble":encoded(displayed),"count":items.count,"index":(items.firstIndex { $0.id == displayed?.id } ?? 0)+1,"reminders":encoded(core.state.reminders),"weather":encoded(core.state.weather),"weatherError":weather.error ?? "","calendar":encoded(calendar.items),"calendars":calendar.calendars,"calendarStatus":calendar.status,"packs":encoded(packList),"pack":edgeQuiet ? NSNull() : encoded(currentPack),"agents":agents,"cities":encoded(cities),"info":info,"loginEnabled":SMAppService.mainApp.status == .enabled,"version":"0.1.2-beta","geometry":geometrySnapshot(),"overlayViewport":overlayViewport()]
+        if edgeQuiet {
+            var settings=result["settings"] as! [String:Any]
+            for key in ["walk","whispers","restEnabled","waterEnabled","reminderSound","calendarAlerts"] { settings[key]=false }
+            result["settings"]=settings
+            var reminders=result["reminders"] as! [String:Any]
+            if reminders["focusMode"] as? String == "running" { reminders["focusMode"]="paused" }
+            result["reminders"]=reminders
+        }
         if smokeDirectory != nil && smokeWidgetFixture {
             var settings=result["settings"] as! [String:Any];settings["calendarEnabled"]=true;settings["city"]=["name":"上海","latitude":31.23,"longitude":121.47,"timezone":"Asia/Shanghai"];result["settings"]=settings
             let start=Calendar.current.startOfDay(for:Date()).timeIntervalSince1970
@@ -640,6 +649,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
     func changeSetting(_ body: [String:Any]) {
         guard let key=body["key"] as? String else { return }
+        if edgeQuiet,["walk","whispers","restEnabled","waterEnabled","reminderSound","calendarAlerts","agent"].contains(key) { info="贴边勿扰期间已暂停，退出后可修改";publish();return }
         let flag=body["value"] as? Bool ?? false
         switch key {
         case "walk":core.state.settings.walk=flag;if !flag && motion.phase == .walk { stopNativeMotion("walk_disabled") }
@@ -674,7 +684,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard let tab=pendingSettingsTab else { return }
         settingsView?.evaluateJavaScript("(()=>{let b=document.querySelector('[data-tab=\"\(tab)\"]');if(!b)return false;b.click();return true})()") { [weak self] value,_ in if value as? Bool == true { self?.pendingSettingsTab=nil } }
     }
-    func emitWhisper() { core.ephemeral.removeAll { $0.category == "whisper" };core.addBubble(category:"whisper",title:"QWhaleMaiden",summary:chatter.next("idle"),priority:10,lifetime:8);runPet("command",["name":"speak"]) }
+    func emitWhisper() { guard !edgeQuiet else { return };core.ephemeral.removeAll { $0.category == "whisper" };core.addBubble(category:"whisper",title:"QWhaleMaiden",summary:chatter.next("idle"),priority:10,lifetime:8);runPet("command",["name":"speak"]) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { runtimeLog.record("web_process_terminated",level:"error");stopNativeMotion("web_process_terminated");webView.reload() }
     func webView(_ webView: WKWebView,didFail navigation: WKNavigation!,withError error: Error) { runtimeLog.record("web_navigation_error",level:"error",["message":String(error.localizedDescription.prefix(200))]) }
     func webView(_ webView: WKWebView,didFinish navigation: WKNavigation!) { publish();if webView === settingsView { selectSettingsTab() } }
