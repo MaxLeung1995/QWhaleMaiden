@@ -26,7 +26,7 @@ const DSHPet=(()=>{
   const next=bag.pop();groupBags.set(group.id,bag);lastCategory=group.id;return next;
  }
  const pick=items=>items[Math.floor(Math.random()*items.length)];
- const pools={idle:['待机呼吸休闲'],think:['工作状态-思考冒泡','工作状态-忙碌点按','工作状态-清点归档'],wait:['工作状态-原地踱步张望'],celebrate:['工作状态-雀跃庆祝'],error:['工作状态-垂头叹气冒汗'],drag:['被鼠标拖拽悬空反馈'],dragRelease:['打瞌睡被惊醒'],walk:['原地左转奔跑','螃蟹走路'],sleep:['原地小憩沉眠'],wake:['超大伸懒腰'],joy:DSH_CATALOG.clicks,welcome:['点击回应-元气挥手'],eat:DSH_CATALOG.eat,play:DSH_CATALOG.play,whisper:DSH_CATALOG.whisper};
+ const pools={idle:['待机呼吸休闲'],think:['工作状态-思考冒泡','工作状态-忙碌点按','工作状态-清点归档'],wait:['工作状态-原地踱步张望'],celebrate:['工作状态-雀跃庆祝'],error:['工作状态-垂头叹气冒汗'],drag:['被鼠标拖拽悬空反馈'],dragRelease:['打瞌睡被惊醒'],walk:['原地左转奔跑','螃蟹走路'],edgeQuiet:['原地重力下蹲压缩'],sleep:['原地小憩沉眠'],wake:['超大伸懒腰'],joy:DSH_CATALOG.clicks,welcome:['点击回应-元气挥手'],eat:DSH_CATALOG.eat,play:DSH_CATALOG.play,whisper:DSH_CATALOG.whisper};
  function pickMode(mode){const name=mode==='walk'&&nextWalkAction?nextWalkAction:pick(pools[mode]||pools.idle);nextWalkAction='';return name}
  async function play(name){
   if(!DSH_CATALOG.all.includes(name)||disabled)return;
@@ -37,7 +37,7 @@ const DSHPet=(()=>{
   if(!direction){play('待机呼吸休闲');return}
   const slot=active===0?1:0,v=videos[slot];orient(v,name,direction);
   v.oncanplay=null;v.onseeked=null;v.onerror=null;v.onended=null;v.ontimeupdate=null;v.pause();v.classList.remove('active');v.muted=true;v.loop=false;
-  const segment=currentMode==='walk'?runClips[name]:null;
+  const segment=currentMode==='walk'?runClips[name]:currentMode==='edgeQuiet'?{start:2.3,end:7.7}:null;
   // Seek before exposing a running clip. Its full version includes a turn and a fall.
   const start=async()=>{
    if(token!==request||v.seeking)return;
@@ -53,7 +53,7 @@ const DSHPet=(()=>{
   };
   v.oncanplay=start;v.onseeked=start;
   v.onerror=()=>{if(token!==request)return;lastError='无法解码 '+name;window.webkit?.messageHandlers?.starbud?.postMessage({type:'runtimeDiagnostic',event:'video_error',message:lastError});/* Keep previous frame or poster, never show a black replacement. */};
-  v.ontimeupdate=()=>{if(token===request&&segment&&currentMode==='walk'&&v.currentTime>=segment.end-.15&&!v.seeking)v.currentTime=segment.start};
+  v.ontimeupdate=()=>{if(token===request&&segment&&['walk','edgeQuiet'].includes(currentMode)&&v.currentTime>=segment.end-.15&&!v.seeking)v.currentTime=segment.start};
   v.onended=()=>{if(token!==request||disabled||reduced)return;if(currentMode==='idle'&&window.onPetAnimationEnded?.())return;if(previewing){previewing=false;play('待机呼吸休闲');return}if(currentMode==='idle'){play(randomAction());return}play(pickMode(currentMode))};
   v.src='dsh/mov/'+encodeURIComponent(name)+'.mov';v.load();
  }
@@ -72,7 +72,7 @@ const DSHPet=(()=>{
   diagnostics(){
    const v=videos[active],r=document.querySelector('#pet').getBoundingClientRect();let alpha=null;
    if(v&&v.readyState>=2){try{const c=document.createElement('canvas');c.width=640;c.height=360;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(v,0,0,640,360);const p=x.getImageData(0,0,640,360).data;let transparent=0,exactTransparent=0,visible=0,minX=640,minY=360,maxX=0,maxY=0;for(let i=3;i<p.length;i+=4){if(p[i]===0)exactTransparent++;if(p[i]<=2)transparent++;if(p[i]>32){visible++;const n=(i-3)/4,px=n%640,py=Math.floor(n/640);minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py)}}alpha={transparent,exactTransparent,transparentThreshold:2,visible,bounds:[minX,minY,maxX,maxY]}}catch(e){alpha={error:String(e)}}}
-   return{runDirection,baseFacing:runClips[action]?.facing||0,runSegment:currentMode==='walk'?runClips[action]||null:null,clipTransform:v?getComputedStyle(v).transform:"",clipMirror:v?Number(v.style.getPropertyValue('--clip-mirror')||1):1,visibleVideoCount:videos.filter(v=>{const s=getComputedStyle(v);return s.visibility!=='hidden'&&Number(s.opacity)>0}).length,videoTransition:getComputedStyle(videos[0]).transitionDuration,renderer:'dsh-hevc-alpha',randomCount:DSH_CATALOG.randomCount,randomCategory:lastCategory,history:[...history],action,wanted,mode:currentMode,ready:!!v&&v.readyState>=2,time:v?.currentTime||0,paused:v?.paused??true,error:lastError,body:{x:r.x,y:r.y,width:r.width,height:r.height},alpha};
+   return{edgeSegment:currentMode==='edgeQuiet'?{start:2.3,end:7.7}:null,runDirection,baseFacing:runClips[action]?.facing||0,runSegment:currentMode==='walk'?runClips[action]||null:null,clipTransform:v?getComputedStyle(v).transform:"",clipMirror:v?Number(v.style.getPropertyValue('--clip-mirror')||1):1,visibleVideoCount:videos.filter(v=>{const s=getComputedStyle(v);return s.visibility!=='hidden'&&Number(s.opacity)>0}).length,videoTransition:getComputedStyle(videos[0]).transitionDuration,renderer:'dsh-hevc-alpha',randomCount:DSH_CATALOG.randomCount,randomCategory:lastCategory,history:[...history],action,wanted,mode:currentMode,ready:!!v&&v.readyState>=2,time:v?.currentTime||0,paused:v?.paused??true,error:lastError,body:{x:r.x,y:r.y,width:r.width,height:r.height},alpha};
   }
  };
 })();

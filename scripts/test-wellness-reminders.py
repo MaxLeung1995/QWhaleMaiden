@@ -68,9 +68,9 @@ try:
  call('preview-reminder','--kind','rest');capture();check(not feedback()[-1]['fields']['soundPlayed'],'sound switch silences reminders while retaining the card');dismiss()
  call('verify','--toggle','reminderSound');call('verify','--toggle','reducedMotion');wait(lambda:facts()['settings']['reducedMotion'])
  call('preview-reminder','--kind','water');d=capture();check(d['ui']['kind']=='wellness' and d['pet']['paused'] and not feedback()[-1]['fields']['animationRequested'],'reduced motion freezes animation while keeping reminder visible');dismiss();call('verify','--toggle','reducedMotion')
- capture('--pet-ui','quiet');wait(lambda:facts()['settings']['quietUntil']>time.time());n=len(feedback());call('preview-reminder','--kind','rest');d=capture()
+ capture('--pet-ui','edgeQuiet');wait(lambda:call('status')['motion']['edgeQuiet']);n=len(feedback());call('preview-reminder','--kind','rest');d=capture()
  check(d['ui']['noticeHidden'] and len(feedback())==n,'do not disturb produces neither reminder popup nor sound')
- capture('--pet-ui','quiet');wait(lambda:facts()['settings']['quietUntil']==0);capture();check(len(feedback())==n+1,'pending reminder presents once when do not disturb ends');dismiss()
+ capture('--pet-ui','edgeDragOut');wait(lambda:not call('status')['motion']['edgeQuiet']);capture();check(len(feedback())==n+1,'pending reminder presents once when do not disturb ends');dismiss()
  # Inject remaining time only, then use the production tick/clock/presentation pipeline.
  for kind in ['rest','water','focus','focusBreak']:
   n=len(feedback());d=capture('--fire-reminder',kind)

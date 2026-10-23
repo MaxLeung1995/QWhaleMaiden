@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     var inputBusy = false
     var through = false
     var menusOnRight=false
-    var hidden = false
+    var edgeQuiet = false
     var hitRegions: [NSRect] = []
     var menuRegions: [NSRect] = []
     var menuGlobalMonitor: Any?
@@ -105,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             setupWindow(); setupMenu(); observeLifecycle();startMotionTimer()
             core.onAccepted = { [weak self] event in
                 if let self=self,[.dsh,.qwenwork].contains(event.agent) { self.adapters.report[event.agent.rawValue]="已收到宿主事件 · "+DateFormatter.localizedString(from:Date(),dateStyle:.none,timeStyle:.short) }
-                guard let self=self,self.core.state.settings.quietUntil <= Date().timeIntervalSince1970,!self.hidden,self.core.activity != "wait" else { return }
+                guard let self=self,!self.edgeQuiet,self.core.activity != "wait" else { return }
                 if let occurred=event.occurredAt,Date().timeIntervalSince1970-occurred>60 { return }
                 if event.type == "turn.ended" { self.runPet("command",["name":"celebrate"]) }
                 else if event.type == "task.failed" { self.runPet("command",["name":"error"]) }
@@ -160,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             }
             window.setFrameOrigin(NSPoint(x:origin,y:y-((core.state.settings.layoutVersion ?? 0)>=8 ? 0 : 278)))
         }
-        else { moveCorner() }
+        else { initialPetPosition() }
         core.state.settings.layoutVersion=9
         ensureVisible();savePosition()
         let url = Bundle.main.resourceURL!.appendingPathComponent("index.html")
@@ -172,24 +172,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
     func setupMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
-        if let icon=NSImage(contentsOf:Bundle.main.resourceURL!.appendingPathComponent("dsh/avatar.png")) { icon.size=NSSize(width:22,height:22);statusItem.button?.image=icon } else { statusItem.button?.title = "✦" }; statusItem.button?.toolTip = "QWhaleMaiden"
+        if let icon=NSImage(contentsOf:Bundle.main.resourceURL!.appendingPathComponent("settings-avatar.png")) { icon.size=NSSize(width:22,height:22);statusItem.button?.image=icon } else { statusItem.button?.title = "✦" }; statusItem.button?.toolTip = "QWhaleMaiden"
         statusItem.isVisible = false
         rebuildMenu()
     }
     func rebuildMenu() {
         let menu = NSMenu()
         func item(_ title: String, _ selector: Selector) { let i = NSMenuItem(title:title,action:selector,keyEquivalent:""); i.target = self; menu.addItem(i) }
-        item(hidden ? "显示桌宠" : "隐藏桌宠",#selector(toggleHidden))
-        item(core.state.settings.quietUntil > Date().timeIntervalSince1970 ? "结束勿扰" : "勿扰 1 小时",#selector(toggleQuiet))
-        item(through ? "关闭整窗穿透" : "整窗穿透",#selector(toggleThrough))
-        item("回到可见屏幕",#selector(corner)); item("设置与生活挂件…",#selector(openSettings))
-        menu.addItem(.separator()); item("开始 45 分钟番茄钟",#selector(startFocus)); item("暂停/继续番茄钟",#selector(pauseFocus)); item("取消番茄钟",#selector(cancelFocus))
-        menu.addItem(.separator()); item("唤醒",#selector(wakePet)); item("睡觉",#selector(sleepPet))
-        menu.addItem(.separator()); item("退出QWhaleMaiden",#selector(quit)); statusItem.menu = menu
+        item("换个形象",#selector(openPacks));item("鼠标穿透",#selector(toggleThrough))
+        item("全部设置",#selector(openSettings));item("退出桌宠",#selector(quit));statusItem.menu=menu
     }
-    @objc func toggleHidden() { stopNativeMotion("visibility_toggle");hidden.toggle(); hidden ? window.orderOut(nil) : window.orderFrontRegardless(); rebuildMenu() }
-    func showPet() { hidden = false; through = false;passThroughExit.stop(); window?.orderFrontRegardless(); updateHitTesting(); rebuildMenu() }
-    @objc func toggleQuiet() { core.state.settings.quietUntil = core.state.settings.quietUntil > Date().timeIntervalSince1970 ? 0 : Date().timeIntervalSince1970+3600; save(); rebuildMenu(); publish() }
+    @objc func openPacks() { pendingSettingsTab="packs";openSettings();selectSettingsTab() }
+    func showPet() { endThrough();window?.orderFrontRegardless();updateHitTesting() }
+    func enterEdgeQuiet() {
+        guard !edgeQuiet,let screen=motionScreen() else { return }
+        stopNativeMotion("edge_quiet");savePosition();endThrough();edgeQuiet=true;petTaps=PetTapSequence()
+        window.level = .statusBar
+        let bounds=motionBounds(screen)
+        window.setFrameOrigin(NSPoint(x:max(bounds.minX,min(window.frame.minX,bounds.maxX)),y:bounds.minY))
+        ensureVisible();runtimeLog.record("edge_quiet_enter");tick();updateHitTesting()
+    }
+    func leaveEdgeQuiet() {
+        guard edgeQuiet else { return };edgeQuiet=false;window.level = .floating
+        ensureVisible();nextWalk=Date().timeIntervalSince1970+Double.random(in:120...300)
+        runtimeLog.record("edge_quiet_exit");tick();updateHitTesting();savePosition()
+    }
     func endThrough() { through=false;passThroughExit.stop();inputBusy=false;updateHitTesting();rebuildMenu();publish() }
     @objc func toggleThrough() {
         stopNativeMotion("through_toggle");runtimeLog.record("through_toggle",["wasEnabled":through])
@@ -197,29 +204,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard passThroughExit.begin(onExit:{ [weak self] in self?.endThrough() }) else { info="恢复快捷键注册失败，未开启穿透";publish();return }
         through=true;inputBusy=false;updateHitTesting();rebuildMenu();info="三指连续轻点三次退出穿透；备用 Control+Option+Command+P";publish()
     }
-    @objc func corner() { stopNativeMotion("recall");moveCorner(); ensureVisible(); savePosition() }
-    @objc func startFocus() { reminderCommand("start") }
-    @objc func pauseFocus() { reminderCommand(core.state.reminders.focusMode == "running" ? "pause" : "resume") }
-    @objc func cancelFocus() { reminderCommand("cancel") }
-    @objc func wakePet() { showPet(); runPet("command",["name":"wake"]) }
-    @objc func sleepPet() { runPet("command",["name":"sleep"]) }
     @objc func quit() { NSApp.terminate(nil) }
     @objc func openSettings() {
         if let window = settingsWindow { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps:true); publish(); return }
         let panel = NSWindow(contentRect:NSRect(x:0,y:0,width:860,height:690),styleMask:[.titled,.closable,.resizable,.miniaturizable],backing:.buffered,defer:false)
-        panel.title = "QWhaleMaiden · 设置与生活"; panel.minSize = NSSize(width:700,height:520); panel.isReleasedWhenClosed = false
+        panel.title = "QWhaleMaiden · 全部设置"; panel.minSize = NSSize(width:700,height:520); panel.isReleasedWhenClosed = false
         let view = makeWebView(); panel.contentView = view; settingsWindow = panel; settingsView = view
         let url = Bundle.main.resourceURL!.appendingPathComponent("settings.html"); view.loadFileURL(url,allowingReadAccessTo:Bundle.main.resourceURL!)
         panel.center(); panel.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps:true)
     }
-    func moveCorner() {
+    func initialPetPosition() {
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main else { return }
         window.setFrameOrigin(NSPoint(x:screen.visibleFrame.maxX-window.frame.width-24,y:screen.visibleFrame.minY-258))
     }
     func bodyRect() -> NSRect {
         let scale=core.state.settings.size
-        if currentPack != nil,let rect=hitRegions.first,rect.width>0,rect.height>0 { return rect }
-        return NSRect(x:petAnchor(scale,onRight:menusOnRight)-111.158*scale/2,y:window.frame.height-320-131.984*scale,width:111.158*scale,height:131.984*scale)
+        if !edgeQuiet,currentPack != nil,let rect=hitRegions.first,rect.width>0,rect.height>0 { return rect }
+        return NSRect(x:petAnchor(scale,onRight:menusOnRight)-111.158*scale/2,y:window.frame.height-320-131.984*scale+(edgeQuiet ? 48*scale : 0),width:111.158*scale,height:(edgeQuiet ? 32 : 131.984)*scale)
     }
     func bodyScreenRect() -> [Double] {
         let b=bodyRect();return [window.frame.minX+b.minX,window.frame.maxY-b.maxY,b.width,b.height]
@@ -231,11 +232,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         return screens[index]
     }
     func motionBounds(_ screen: NSScreen) -> MotionBounds {
-        MotionBounds.forScreen(screen.visibleFrame,body:bodyRect(),windowHeight:window.frame.height)
+        MotionBounds.forScreen(edgeQuiet ? screen.frame : screen.visibleFrame,body:bodyRect(),windowHeight:window.frame.height)
     }
     func ensureVisible(preserveMotionPosition: Bool=false) {
         guard window != nil,let screen=motionScreen() else { return }
-        let f=screen.visibleFrame;var w=window.frame;var flipped=false
+        let f=edgeQuiet ? screen.frame : screen.visibleFrame;var w=window.frame;var flipped=false
         let center=w.minX+petAnchor(core.state.settings.size,onRight:menusOnRight)
         let oldAnchor=petAnchor(core.state.settings.size,onRight:menusOnRight)
         if w.minX<f.minX && !menusOnRight && center<f.midX { menusOnRight=true;flipped=true }
@@ -279,7 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         runtimeLog.record(dragged ? "drag_release" : "pet_tap",motionFields())
         runPet("command",["name":"nativeRelease","dragged":dragged,"flung":motion.phase == .flight])
         inputBusy=motion.active;updateHitTesting();if !inputBusy { savePosition() }
-        if petTaps.record(now:ProcessInfo.processInfo.systemUptime,dragged:dragged) { startWalk(flee:true) }
+        if petTaps.record(now:ProcessInfo.processInfo.systemUptime,dragged:dragged) { leaveEdgeQuiet();startWalk(flee:true) }
     }
     func stopNativeMotion(_ reason: String) {
         guard motion.active else { return };menuBlockedUntil=ProcessInfo.processInfo.systemUptime+0.7;runtimeLog.record("motion_stopped",motionFields().merging(["reason":reason]) { _,new in new });motion.stop();inputBusy=false
@@ -290,7 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         return PetMotion.walkDirection(position:window.frame.origin,bounds:motionBounds(screen),randomDirection:Bool.random() ? -1 : 1)
     }
     func startWalk(flee: Bool=false) {
-        guard !motion.active,!through,!hidden,!core.state.settings.reducedMotion,(flee || core.state.settings.walk),let screen=motionScreen() else { return }
+        guard !motion.active,!through,!edgeQuiet,!core.state.settings.reducedMotion,(flee || core.state.settings.walk),let screen=motionScreen() else { return }
         let bounds=motionBounds(screen),distance=flee ? 300 : Double.random(in:130...200)
         let angles=(0..<12).map { Double($0)*Double.pi/6+Double.random(in:-0.12...0.12) }.shuffled()
         guard let route=WalkRoute.choose(position:window.frame.origin,bounds:bounds,distance:distance,angles:angles) else { return }
@@ -302,7 +303,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         runPet("command",["name":"nativeWalkDirection","direction":motion.velocity.x<0 ? -1 : 1,"remaining":motion.walkRemaining,"token":walkToken,"flee":flee])
         runtimeLog.record(flee ? "flee_start" : "walk_start",motionFields().merging(["target":[route.target.x,route.target.y],"distance":route.distance]) { _,new in new })
     }
-    func motionFields() -> [String:Any] { ["phase":motion.phase.rawValue,"x":window.frame.minX,"y":window.frame.minY,"vx":motion.velocity.x,"vy":motion.velocity.y,"through":through,"walkVisualReady":walkVisualReady,"nextWalkIn":max(0,nextWalk-Date().timeIntervalSince1970)] }
+    func motionFields() -> [String:Any] { ["phase":motion.phase.rawValue,"x":window.frame.minX,"y":window.frame.minY,"vx":motion.velocity.x,"vy":motion.velocity.y,"through":through,"edgeQuiet":edgeQuiet,"walkVisualReady":walkVisualReady,"nextWalkIn":max(0,nextWalk-Date().timeIntervalSince1970)] }
+    func followGrab(cursor: NSPoint,now: Double,screen: NSScreen) {
+        if motion.follow(cursor:cursor,now:now,bounds:motionBounds(screen)) {
+            if edgeQuiet { leaveEdgeQuiet();motion.position=window.frame.origin;motion.grabOffset=NSPoint(x:window.frame.minX-cursor.x,y:window.frame.minY-cursor.y) }
+            runtimeLog.record("drag_start",motionFields());runPet("command",["name":"nativeDragStarted"])
+        }
+    }
     func advanceMotion() {
         let now=ProcessInfo.processInfo.systemUptime,elapsed=now-motionUptime;motionUptime=now
         guard motion.active,let screen=motionScreen() else { return }
@@ -315,7 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let oldDirection=motion.velocity.x
         let oldPhase=motion.phase
         if motion.isGrabbing {
-            if motion.follow(cursor:NSEvent.mouseLocation,now:now,bounds:motionBounds(screen)) { runtimeLog.record("drag_start",motionFields());runPet("command",["name":"nativeDragStarted"]) }
+            followGrab(cursor:NSEvent.mouseLocation,now:now,screen:screen)
             if NSEvent.pressedMouseButtons & 1 == 0 { releaseGrab() }
         } else {
             collisions=motion.advance(seconds:elapsed,bounds:motionBounds(screen))
@@ -333,7 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if now-motionReportAt>=1 { runtimeLog.record("motion_sample",motionFields().merging(["frames":motionFrames,"elapsed":now-motionReportAt,"maxFrameMS":motionMaxFrameMS]) { _,new in new });motionFrames=0;motionMaxFrameMS=0;motionReportAt=now }
         if oldPhase != .idle && !motion.active { menuBlockedUntil=now+0.7;inputBusy=false;runPet("command",["name":"nativeMotionStopped"]);savePosition();publish() }
     }
-    func savePosition() { core.state.settings.x = window.frame.minX; core.state.settings.y = window.frame.minY; save() }
+    func savePosition() { guard !edgeQuiet else { return };core.state.settings.x = window.frame.minX; core.state.settings.y = window.frame.minY; save() }
     func updateHitTesting() {
         guard window != nil else { return }
         let local = window.convertPoint(fromScreen:NSEvent.mouseLocation)
@@ -378,7 +385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     func tick() {
         refreshScreenGeometry()
         let uptime = ProcessInfo.processInfo.systemUptime;
-        if uptime-lastHealthLog>=30 { lastHealthLog=uptime;runtimeLog.record("health",motionFields().merging(["hidden":hidden,"menuOpen":!menuRegions.isEmpty]) { _,new in new }) }
+        if uptime-lastHealthLog>=30 { lastHealthLog=uptime;runtimeLog.record("health",motionFields().merging(["edgeQuiet":edgeQuiet,"menuOpen":!menuRegions.isEmpty]) { _,new in new }) }
         if let error=weather.error,recentErrors.insert(error).inserted { runtimeLog.record("weather_error",level:"warning",["message":String(error.prefix(200))]) }
  let dt = max(0,min(5,uptime-lastTick)); lastTick = uptime
         let now = Date().timeIntervalSince1970
@@ -390,11 +397,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if Int(now) % 2 == 0 { adapters.poll() }
         if Int(now) % 60 == 0 { calendar.refresh(core:core); weather.refresh(core:core) { [weak self] in self?.publish() } }
         calendar.tick(core:core,now:now)
-        if now >= nextWalk { nextWalk = now+Double.random(in:120...300); if core.state.settings.walk && !core.state.settings.reducedMotion && core.activity == "idle" && !inputBusy && !hidden && core.state.settings.quietUntil <= now { runPet("command",["name":"walk"]) } }
+        if now >= nextWalk { nextWalk = now+Double.random(in:120...300); if core.state.settings.walk && !core.state.settings.reducedMotion && core.activity == "idle" && !inputBusy && !edgeQuiet { runPet("command",["name":"walk"]) } }
         if now >= nextWhisper {
             nextWhisper = now+Double.random(in:120...240)
-            if core.state.settings.whispers && core.activity == "idle" && !inputBusy && !hidden && core.state.settings.quietUntil <= now { emitWhisper() }
+            if core.state.settings.whispers && core.activity == "idle" && !inputBusy && !edgeQuiet { emitWhisper() }
         }
+        if edgeQuiet { displayed=nil;selection.selectedID=nil;publish();return }
         let items = core.bubbles(now:now)
         if let displayed = displayed, displayed.category != "waiting", selection.lockID == nil, now-shownAt >= 8 {
             do { try core.suppress(displayed.id) } catch { info = error.localizedDescription }
@@ -404,7 +412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let next = selection.select(eligible,now:now)
         if next?.id != displayed?.id { shownAt = now }
         displayed = next
-        statusItem.button?.title = core.state.settings.quietUntil > now ? "✦◦" : (items.contains(where: { $0.category == "waiting" }) ? "✦•" : "✦")
+        statusItem.button?.title = items.contains(where: { $0.category == "waiting" }) ? "✦•" : "✦"
         publish()
         presentWellnessReminder()
     }
@@ -418,7 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         addWellnessReminder(kind:kind,preview:true);tick()
     }
     func presentWellnessReminder() {
-        guard let bubble=displayed,["focus","rest","water"].contains(bubble.category),!presentedReminders.contains(bubble.id),!hidden,!inputBusy,core.state.settings.quietUntil<=Date().timeIntervalSince1970,
+        guard let bubble=displayed,["focus","rest","water"].contains(bubble.category),!presentedReminders.contains(bubble.id),!edgeQuiet,!inputBusy,
               let style=WellnessReminder(kind:bubble.category,phase:bubble.title == "休息结束" ? "break" : "work") else { return }
         presentedReminders.append(bubble.id);if presentedReminders.count>128 { presentedReminders.removeFirst(presentedReminders.count-128) }
         let animate = !core.state.settings.reducedMotion && core.activity == "idle"
@@ -431,7 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
     func refreshPacks() { packList = packs.list(); currentPack = packList.first { $0.id == core.state.settings.selectedPack } }
     func overlayViewport() -> [String:Double] {
-        guard let screen=motionScreen() else { return [:] };let f=screen.visibleFrame,w=window.frame
+        guard let screen=motionScreen() else { return [:] };let f=edgeQuiet ? screen.frame : screen.visibleFrame,w=window.frame
         return ["left":max(0,f.minX-w.minX),"right":min(w.width,f.maxX-w.minX),"top":max(0,w.maxY-f.maxY),"bottom":min(w.height,w.maxY-f.minY)]
     }
     func resetMotionTelemetry() { motionUptime=ProcessInfo.processInfo.systemUptime;motionReportAt=motionUptime;motionFrames=0;motionMaxFrameMS=0 }
@@ -445,7 +453,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let agents: [[String:Any]] = AgentID.allCases.map { a in
             ["id":a.rawValue,"name":a.name,"installed":LaunchRouter.appURL(a) != nil,"enabled":!core.state.settings.disabledAgents.contains(a),"status":adapters.report[a.rawValue] ?? ([.dsh,.qwenwork].contains(a) ? BridgeSetup.status(agent:a,home:adapters.home) : "需安装 hook；模式覆盖待真实验证"),"navigation":"打开应用 · 会话定位未启用"]
         }
-        var result:[String:Any] = ["menusOnRight":menusOnRight,"through":through,"escape":passThroughExit.status,"chatter":chatter.lines,"settings":encoded(core.state.settings),"activity":core.activity,"bubble":encoded(displayed),"count":items.count,"index":(items.firstIndex { $0.id == displayed?.id } ?? 0)+1,"reminders":encoded(core.state.reminders),"weather":encoded(core.state.weather),"weatherError":weather.error ?? "","calendar":encoded(calendar.items),"calendars":calendar.calendars,"calendarStatus":calendar.status,"packs":encoded(packList),"pack":encoded(currentPack),"agents":agents,"cities":encoded(cities),"info":info,"loginEnabled":SMAppService.mainApp.status == .enabled,"version":"0.1.2-beta","geometry":geometrySnapshot(),"overlayViewport":overlayViewport()]
+        var result:[String:Any] = ["edgeQuiet":edgeQuiet,"menusOnRight":menusOnRight,"through":through,"escape":passThroughExit.status,"chatter":chatter.lines,"settings":encoded(core.state.settings),"activity":core.activity,"bubble":encoded(displayed),"count":items.count,"index":(items.firstIndex { $0.id == displayed?.id } ?? 0)+1,"reminders":encoded(core.state.reminders),"weather":encoded(core.state.weather),"weatherError":weather.error ?? "","calendar":encoded(calendar.items),"calendars":calendar.calendars,"calendarStatus":calendar.status,"packs":encoded(packList),"pack":edgeQuiet ? NSNull() : encoded(currentPack),"agents":agents,"cities":encoded(cities),"info":info,"loginEnabled":SMAppService.mainApp.status == .enabled,"version":"0.1.2-beta","geometry":geometrySnapshot(),"overlayViewport":overlayViewport()]
         if smokeDirectory != nil && smokeWidgetFixture {
             var settings=result["settings"] as! [String:Any];settings["calendarEnabled"]=true;settings["city"]=["name":"上海","latitude":31.23,"longitude":121.47,"timezone":"Asia/Shanghai"];result["settings"]=settings
             let start=Calendar.current.startOfDay(for:Date()).timeIntervalSince1970
@@ -513,7 +521,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 if let scenario=object["scenario"] as? String { core.ephemeral.removeAll { $0.category == "whisper" };if scenario == "whisper" { core.addBubble(category:"whisper",title:"QWhaleMaiden",summary:"慢慢来，先做眼前这一步。",priority:10,lifetime:30) };tick() }
                 if let focus=object["focus"] as? String,["start","pause","resume","cancel","break"].contains(focus) { settingsView?.evaluateJavaScript("document.querySelector('[data-focus=\"\(focus)\"]').click()",completionHandler:nil) }
                 if let ui=object["petUI"] as? String {
-                    let actions=["idleFresh":"transientUntil=0;forcedSleep=false;state.activity='idle';updateMode();DSHPet.stop();DSHPet.set('idle',false)","queueWalk":"window.command({name:'walk'})","finishIdle":"(()=>{let v=document.querySelector('#art video.active');if(v&&Number.isFinite(v.duration))v.currentTime=v.duration-.03})()","ackReminder":"document.querySelector('#ackReminder').click()","laterReminder":"document.querySelector('#later').click()","quiet":"document.querySelector('[data-control=quiet]').click()","bar":"showBar()","menuProbe":"showBar();document.querySelector('#pet').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true}));document.querySelector('#pet').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))","more":"showBar();if(document.querySelector('#morePanel').hidden)document.querySelector('#controlsButton').click()","interact":"document.querySelector('[data-more-tab=interact]').click()","tools":"document.querySelector('[data-more-tab=tools]').click()","manage":"document.querySelector('[data-more-tab=manage]').click()","focus":"document.querySelector('#focusToggle').click()","pause":"document.querySelector('#pauseQuick').click()","whisper":"document.querySelector('#saySomething').click()","escape":"document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))","idle":"transientUntil=0;forcedSleep=false;lastInteract=Date.now()-120000;state.activity='idle';updateMode()","feed":"document.querySelector('[data-pet=eat]').click()","through":"document.querySelector('[data-control=through]').click()","settingsRecover":"document.querySelector('#exitThrough').click()","widgets":"document.querySelector('#toggleWidgets').click()","focusSettings":"document.querySelector('#focusSettings').click()","calendar":"document.querySelector('#miniCalendar').click()","nextRandom":"(()=>{let v=document.querySelector('#art video.active');if(v&&Number.isFinite(v.duration))v.currentTime=v.duration-.03})()"]
+                    let actions=["openPacks":"document.querySelector('.manage-actions [data-open-tab=packs]').click()","openAllSettings":"document.querySelector('.manage-actions [data-open-tab=companion]').click()","idleFresh":"transientUntil=0;forcedSleep=false;state.activity='idle';updateMode();DSHPet.stop();DSHPet.set('idle',false)","queueWalk":"window.command({name:'walk'})","finishIdle":"(()=>{let v=document.querySelector('#art video.active');if(v&&Number.isFinite(v.duration))v.currentTime=v.duration-.03})()","ackReminder":"document.querySelector('#ackReminder').click()","laterReminder":"document.querySelector('#later').click()","edgeQuiet":"document.querySelector('[data-control=edgeQuiet]').click()","bar":"showBar()","menuProbe":"showBar();document.querySelector('#pet').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true}));document.querySelector('#pet').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))","more":"showBar();if(document.querySelector('#morePanel').hidden)document.querySelector('#controlsButton').click()","interact":"document.querySelector('[data-more-tab=interact]').click()","tools":"document.querySelector('[data-more-tab=tools]').click()","manage":"document.querySelector('[data-more-tab=manage]').click()","focus":"document.querySelector('#focusToggle').click()","pause":"document.querySelector('#pauseQuick').click()","whisper":"document.querySelector('#saySomething').click()","escape":"document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))","idle":"transientUntil=0;forcedSleep=false;lastInteract=Date.now()-120000;state.activity='idle';updateMode()","feed":"document.querySelector('[data-pet=eat]').click()","through":"document.querySelector('[data-control=through]').click()","widgets":"document.querySelector('#toggleWidgets').click()","focusSettings":"document.querySelector('#focusSettings').click()","calendar":"document.querySelector('#miniCalendar').click()","nextRandom":"(()=>{let v=document.querySelector('#art video.active');if(v&&Number.isFinite(v.duration))v.currentTime=v.duration-.03})()"]
                     if ui == "throwVertical" || ui == "throwDiagonal" || ui == "throwLeft" {
                         if let screen=motionScreen() { let b=motionBounds(screen),start=NSPoint(x:(b.minX+b.maxX)/2,y:(b.minY+b.maxY)/2);window.setFrameOrigin(start);runPet("command",["name":"nativeMotionStarted"]);motion.launch(position:start,velocity:NSPoint(x:ui == "throwVertical" ? 0 : ui == "throwLeft" ? -1800 : 1400,y:1100));inputBusy=true;resetMotionTelemetry();runtimeLog.record("test_throw",motionFields()) }
                     }
@@ -521,6 +529,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                         stopNativeMotion("edge_test")
                         if let screen=motionScreen() { let b=motionBounds(screen);window.setFrameOrigin(NSPoint(x:(b.minX+b.maxX)/2,y:ui == "topEdge" ? b.maxY : b.minY));ensureVisible();publish() }
                     }
+                    else if ui == "settingsSmall" { settingsWindow?.setContentSize(NSSize(width:700,height:520)) }
+                    else if ui == "settingsLarge" { settingsWindow?.setContentSize(NSSize(width:860,height:690)) }
+                    else if ui == "edgeDragOut",let screen=motionScreen() { beginGrab();let c=NSEvent.mouseLocation;followGrab(cursor:NSPoint(x:c.x,y:c.y+40),now:ProcessInfo.processInfo.systemUptime+0.01,screen:screen);releaseGrab() }
                     else if ui == "petTap" { beginGrab();releaseGrab() }
                     else if ui == "autoWalkDue" { nextWalk=0;tick() }
                     else if ui == "stopWalk" { stopNativeMotion("test_stop") }
@@ -535,7 +546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                     else if ui == "motionStop" { stopNativeMotion("test_stop") }
                     else if ui == "widgetFixture" { smokeWidgetFixture=true;publish() }
                     else if ui == "clearWidgetFixture" { smokeWidgetFixture=false;publish() }
-                    else if ui == "settingsRecover" { settingsView?.evaluateJavaScript("document.querySelector('#exitThrough').click()",completionHandler:nil) }
+                    else if ui == "settingsRecover" { settingsView?.evaluateJavaScript("document.querySelector('#toggleThrough').click()",completionHandler:nil) }
                     else if ui == "escapeGesture" { let base=ProcessInfo.processInfo.systemUptime;for i in 0..<3 { passThroughExit.receive(contacts:3,at:base+Double(i)*0.3);passThroughExit.receive(contacts:0,at:base+Double(i)*0.3+0.1) } }
                     else if ui == "leftEdge",let screen=window.screen ?? NSScreen.main { window.setFrameOrigin(NSPoint(x:screen.visibleFrame.minX-1,y:window.frame.minY));menusOnRight=false;ensureVisible();publish() }
                     else if ui == "rightEdge",let screen=window.screen ?? NSScreen.main { window.setFrameOrigin(NSPoint(x:screen.visibleFrame.maxX-window.frame.width+1,y:window.frame.minY));menusOnRight=true;ensureVisible();publish() }
@@ -565,7 +576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         switch type {
         case "previewReminder": if isPanel,let kind=body["kind"] as? String { previewWellnessReminder(kind) }
         case "ready": runtimeLog.record("web_ready");publish()
-        case "requestPetMenu": if !isPanel,!motion.active,ProcessInfo.processInfo.systemUptime>=menuBlockedUntil { runPet("command",["name":"revealPetMenu"]) }
+        case "requestPetMenu": if !isPanel,!edgeQuiet,!motion.active,ProcessInfo.processInfo.systemUptime>=menuBlockedUntil { runPet("command",["name":"revealPetMenu"]) }
         case "beginGrab": if !isPanel { beginGrab() }
         case "releaseGrab": if !isPanel { releaseGrab() }
         case "cancelGrab": if !isPanel {
@@ -574,7 +585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             else { stopNativeMotion(reason) }
         }
         case "stopMotion": if !isPanel { stopNativeMotion("web_action") }
-        case "nativeWalk": if !isPanel,core.activity == "idle",core.state.settings.quietUntil<=Date().timeIntervalSince1970 { startWalk() }
+        case "nativeWalk": if !isPanel,core.activity == "idle",!edgeQuiet { startWalk() }
         case "walkAnimationReady": if !isPanel,body["token"] as? Int == walkToken,motion.phase == .walk { walkVisualReady=true;resetMotionTelemetry() }
         case "runAnimationDirection":
             if !isPanel,let token=body["token"] as? Int,let action=body["action"] as? String,["原地左转奔跑","原地漂浮踏步","螃蟹走路"].contains(action) {
@@ -601,12 +612,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             }
             do { try core.suppress(id,until:type == "snooze" ? Date().timeIntervalSince1970+1800 : .greatestFiniteMagnitude) } catch { info=error.localizedDescription }; selection.lockID=nil; pressed=nil; tick()
         case "cycle": selection.lockID=nil; pressed=nil; displayed=selection.select(core.bubbles(),now:Date().timeIntervalSince1970,delta:(body["delta"] as? Int ?? 1)>0 ? 1 : -1); shownAt=Date().timeIntervalSince1970; publish()
-        case "exitThrough": if isPanel { endThrough() }
         case "menuFocus": if !isPanel { let active=body["active"] as? Bool ?? false;window.acceptsMenuKeys=active;if active { window.makeKey() } else if window.isKeyWindow { window.resignKey() } }
         case "settings": openSettings();if let tab=body["tab"] as? String,["companion","agents","life","widgets","packs"].contains(tab) { pendingSettingsTab=tab;selectSettingsTab() }
         case "whisper": if !isPanel { emitWhisper();tick() }
         case "petSetting": if !isPanel,let key=body["key"] as? String,["walk","whispers","reducedMotion"].contains(key) { changeSetting(body) }
-        case "control": if !isPanel { switch body["name"] as? String { case "quiet":toggleQuiet();case "corner":corner();case "hide":toggleHidden();case "through":toggleThrough();case "quit":quit();default:break } }
+        case "edgeQuiet": enterEdgeQuiet()
+        case "toggleThrough": toggleThrough()
+        case "control": if !isPanel { switch body["name"] as? String { case "edgeQuiet":enterEdgeQuiet();case "through":toggleThrough();case "quit":quit();default:break } }
         case "controls": if !isPanel { statusItem.menu?.popUp(positioning:nil,at:NSEvent.mouseLocation,in:nil) }
         case "setting": if isPanel { changeSetting(body) }
         case "focus": if let name=body["name"] as? String { reminderCommand(name) }
@@ -692,10 +704,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         petView.takeSnapshot(with:nil) { image,error in
             if let image=image,let tiff=image.tiffRepresentation,let rep=NSBitmapImageRep(data:tiff),let png=rep.representation(using:.png,properties:[:]) { try? png.write(to:root.appendingPathComponent("pet-current.png")) }
         }
+        if edgeQuiet {
+            let b=bodyRect(),config=WKSnapshotConfiguration();config.rect=NSRect(x:b.minX-10,y:b.minY,width:b.width+20,height:b.height)
+            petView.takeSnapshot(with:config) { image,_ in if let tiff=image?.tiffRepresentation,let rep=NSBitmapImageRep(data:tiff),let png=rep.representation(using:.png,properties:[:]) { try? png.write(to:root.appendingPathComponent("edge-head.png")) } }
+        }
         settingsView?.takeSnapshot(with:nil) { image,error in
             if let image=image,let tiff=image.tiffRepresentation,let rep=NSBitmapImageRep(data:tiff),let png=rep.representation(using:.png,properties:[:]) { try? png.write(to:root.appendingPathComponent("panel-current.png")) }
         }
-        settingsView?.evaluateJavaScript("JSON.stringify({tab:document.querySelector('[data-tab].active')?.dataset.tab})") { result,_ in
+        settingsView?.evaluateJavaScript("JSON.stringify(window.settingsDiagnostics())") { result,_ in
             if let text=result as? String { try? text.write(to:root.appendingPathComponent("settings-view.json"),atomically:true,encoding:.utf8) }
         }
         petView.evaluateJavaScript("JSON.stringify({mode:document.body.dataset.mode,bubble:!document.querySelector('#notice').hidden,source:document.querySelector('#noticeSource').textContent,text:document.querySelector('#noticeText').textContent,regions:!!document.querySelector('#pet'),pet:window.petDiagnostics(),ui:window.uiDiagnostics()})") { result,error in

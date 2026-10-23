@@ -76,7 +76,6 @@ struct PetSettings: Codable {
     // Optional so pre-sound snapshots decode without a destructive migration.
     var reminderSound: Bool?
     var preview = false
-    var quietUntil: Double = 0
     var size: Double = 1
     var x: Double?
     var y: Double?
@@ -263,7 +262,6 @@ final class PetCore {
     }
 
     func bubbles(now: Double = Date().timeIntervalSince1970) -> [Bubble] {
-        if state.settings.quietUntil > now { return [] }
         var items = ephemeral.filter { ($0.expiresAt ?? .greatestFiniteMagnitude) > now }
         for task in state.tasks.values where !state.settings.disabledAgents.contains(task.agent) {
             guard task.status != "active", task.status != "unknown" else { continue }

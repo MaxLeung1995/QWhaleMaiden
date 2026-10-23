@@ -71,6 +71,7 @@ DSH/千问办公已通过隔离插件与原生事件链路测试；真实宿主�
 ./scripts/test-core.sh
 ./scripts/test-motion.sh
 python3 scripts/test-fullscreen-walk.py
+python3 scripts/test-edge-settings.py
 ./scripts/test-assets.sh
 python3 scripts/test-phase2.py
 python3 scripts/test-motion-runtime.py

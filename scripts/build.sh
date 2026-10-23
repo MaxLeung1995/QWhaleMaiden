@@ -21,9 +21,9 @@ cp -R Resources/example-pack "$STAGE/Contents/Resources/"
 ICONSET="build/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
-  sips -z "$size" "$size" Resources/icon-1024.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  sips -z "$size" "$size" Resources/settings-avatar.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
   double=$((size*2))
-  sips -z "$double" "$double" Resources/icon-1024.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+  sips -z "$double" "$double" Resources/settings-avatar.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 python3 scripts/build-icon.py "$ICONSET" "$STAGE/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$STAGE/Contents/Helpers/starbud-event"
